@@ -1,38 +1,40 @@
-# Malware Scanner Android (ONNX)
+# Mobile Shield - Malware Scanner Android (MVP)
 
-Aplikasi ini menambahkan dua fitur utama:
+Aplikasi Mobile Shield adalah versi MVP yang sudah siap digunakan (Production-Ready). Aplikasi ini dirancang beroperasi layaknya perangkat lunak Antivirus modern, yang berfokus murni pada perlindungan perangkat pengguna dari ancaman malware secara lokal tanpa memerlukan koneksi internet.
 
-1. **File Scanner & Dataset Tester**
-   - Pilih file tunggal via SAF.
-   - Pilih folder dataset via `OpenDocumentTree()`.
-   - Proses klasifikasi berjalan di `Dispatchers.IO`.
-   - Hasil menampilkan label `Aman` / `Malware`, confidence, dan ringkasan dataset.
-   - Jika struktur folder dataset memiliki nama seperti `malware`, `benign`, `safe`, atau `clean`, aplikasi akan menghitung akurasi berdasarkan label folder.
+Fitur utama:
 
-2. **Real-time Background Malware Monitor**
-   - Monitor folder path berbasis `FileObserver`.
-   - Default folder: `Downloads`.
-   - Jika file baru terdeteksi dan model memberi prediksi malware, aplikasi menampilkan notifikasi prioritas tinggi.
-   - Service berjalan sebagai foreground service.
+- Manual File Scanner (Pemindai Sesuai Permintaan)
+  - Pengguna dapat mengecek file mencurigakan apapun secara manual via Storage Access Framework (SAF).
+  - Mesin AI akan membaca struktur biner file tersebut dan memprosesnya lewat tahapan: prapemrosesan → ONNX Inference → pascapemrosesan.
+  - Hasil akan langsung ditampilkan di layar: ✅ Aman atau ⚠️ Malware beserta tingkat probabilitasnya (confidence).
 
-## Catatan penting
+- Active Shield (Real-time Background Malware Monitor)
+  - Perlindungan otomatis yang memonitor aktivitas file baru secara real-time menggunakan `FileObserver`.
+  - Default folder pemantauan: `Downloads` (atau folder masuk lainnya).
+  - Jika ada file baru yang terunduh dan AI mendeteksinya sebagai ancaman (Malware), aplikasi akan langsung menembakkan Notifikasi Prioritas Tinggi agar pengguna tidak membuka file tersebut.
+  - Sistem ini berjalan sangat ringan di latar belakang perangkat sebagai Foreground Service.
 
-- Model yang dipakai ada di `app/src/main/assets/image_model_fixed.onnx`.
-- Model ini dibaca sebagai input gambar `1x3x224x224` dari byte file mentah.
-- Pada Android 10+ pemantauan folder langsung dapat dibatasi oleh scoped storage. Untuk hasil paling stabil, gunakan folder yang memang bisa diakses aplikasi.
-- Jika notifikasi belum muncul di Android 13+, pastikan izin notifikasi sudah diberikan.
+⚙️ Spesifikasi Teknis Engine
 
-## Build
+- Model Machine Learning berjalan sepenuhnya secara offline di dalam perangkat menggunakan file `app/src/main/assets/malware_model.onnx` (dan sidecar `malware_model.onnx.data`).
+- Mesin memproses input dari byte file mentah lalu dikonversi menjadi bentuk matriks/gambar `1x3x224x224` piksel dengan format RGB.
+- Catatan OS: Pada Android 10+, pemantauan folder dapat dibatasi oleh scoped storage. Gunakan folder yang memang bisa diakses oleh sistem aplikasi.
+- Catatan OS: Untuk pengguna Android 13+, pastikan izin Notifikasi (Notification Permission) sudah diberikan agar sistem alarm peringatan dapat muncul.
+
+🚀 Build Project
+
+Pastikan Anda menggunakan Android Studio versi terbaru.
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-## Alur penggunaan
+📱 Alur Penggunaan Aplikasi
 
-1. Buka aplikasi.
-2. Tekan **Pilih File** untuk scan file tunggal.
-3. Tekan **Pilih Folder Dataset** lalu **Scan Dataset** untuk pengujian batch.
-4. Isi path folder monitor, lalu tekan **Mulai Monitor**.
-5. Tekan **Hentikan Monitor** untuk mematikan pemantauan.
+1. Buka aplikasi Mobile Shield.
+2. Untuk Scan Manual: Tekan tombol "Pilih File", cari file (misal: .apk atau dokumen) yang baru saja Anda terima. Hasil keamanan akan langsung keluar.
+3. Untuk Proteksi Otomatis: Pastikan path folder monitor sudah terisi (misal: Downloads), lalu tekan "Mulai Monitor". Anda bisa menutup aplikasi, dan pelindung akan tetap aktif berjaga di latar belakang.
+4. Tekan "Hentikan Monitor" jika Anda ingin menonaktifkan pemantauan otomatis.
 
+Jika Anda ingin menambahkan dokumentasi penggunaan lebih rinci, contoh screenshot, atau instruksi pengujian dataset internal, beri tahu saya agar README ini bisa saya kembangkan lagi.

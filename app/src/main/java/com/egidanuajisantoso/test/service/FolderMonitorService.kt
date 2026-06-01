@@ -1,12 +1,14 @@
 package com.egidanuajisantoso.test.service
 
+import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.FileObserver
 import android.os.IBinder
-import androidx.core.app.NotificationManagerCompat
-import com.egidanuajisantoso.test.data.ScannerRepository
+import androidx.core.content.ContextCompat
+import com.egidanuajisantoso.test.domain.finalLabel
 import com.egidanuajisantoso.test.domain.PredictionLabel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,13 +22,13 @@ import java.util.concurrent.ConcurrentHashMap
 class FolderMonitorService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(serviceJob + Dispatchers.IO)
-    private lateinit var repository: ScannerRepository
+    private lateinit var repository: com.egidanuajisantoso.test.data.ScannerRepository
     private var observer: FileObserver? = null
     private val debounceMap = ConcurrentHashMap<String, Long>()
 
     override fun onCreate() {
         super.onCreate()
-        repository = ScannerRepository(applicationContext)
+        repository = com.egidanuajisantoso.test.data.ScannerRepository(applicationContext)
         NotificationHelper.ensureChannels(this)
         startForeground(
             NotificationHelper.FOREGROUND_NOTIFICATION_ID,
@@ -79,7 +81,8 @@ class FolderMonitorService : Service() {
                             pathHint = watchedFile.absolutePath,
                         )
                     }.onSuccess { result ->
-                        if (result.predicted.label == PredictionLabel.MALWARE) {
+                        // Follow flowchart: trigger alert when malware probability > threshold
+                        if (result.predicted.finalLabel() == PredictionLabel.MALWARE) {
                             NotificationHelper.showMalwareAlert(
                                 context = this@FolderMonitorService,
                                 scanResult = result,
@@ -98,15 +101,26 @@ class FolderMonitorService : Service() {
         return previous != null && now - previous < 2000L
     }
 
+    @SuppressLint("MissingPermission")
     private fun updateForegroundNotification(path: String, message: String) {
-        runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        try {
             val notification = NotificationHelper.buildForegroundNotification(
                 context = this,
                 monitoredPath = path,
                 message = message,
             )
-            NotificationManagerCompat.from(this)
+            androidx.core.app.NotificationManagerCompat.from(this)
                 .notify(NotificationHelper.FOREGROUND_NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+            // Permission might be revoked while service is running.
         }
     }
 

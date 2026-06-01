@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -45,10 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.egidanuajisantoso.test.domain.BinaryImagePreprocessor
+import com.egidanuajisantoso.test.domain.OnnxMalwareClassifier
 import com.egidanuajisantoso.test.domain.PredictionLabel
 import com.egidanuajisantoso.test.domain.ScanItemResult
 import com.egidanuajisantoso.test.domain.ScanProgress
-import java.util.Locale
+import com.egidanuajisantoso.test.domain.finalLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +63,9 @@ fun ScannerScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var startMonitorAfterPermission by remember { mutableStateOf(false) }
+    
+    // Diagnostic toggle state
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -68,17 +74,6 @@ fun ScannerScreen(
                 persistReadPermission(context, uri)
                 val displayName = resolveDisplayName(context, uri)
                 viewModel.scanSelectedFile(uri = uri, displayName = displayName, pathHint = displayName)
-            }
-        },
-    )
-
-    val folderPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
-        onResult = { uri ->
-            if (uri != null) {
-                persistTreePermission(context, uri)
-                val displayName = resolveDisplayName(context, uri)
-                viewModel.onDatasetFolderSelected(uri, displayName)
             }
         },
     )
@@ -112,12 +107,12 @@ fun ScannerScreen(
         ) {
             item {
                 Text(
-                    text = "Malware Scanner & Monitor",
+                    text = "Mobile Shield - Malware Scanner",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "Scan file satuan, dataset folder, dan pantau folder unduhan dengan model ONNX dari assets.",
+                    text = "Pemindai lokal offline: scan file manual dan proteksi realtime pada folder unduhan menggunakan model ONNX dari assets.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -135,20 +130,17 @@ fun ScannerScreen(
                             }) {
                                 Text("Pilih File")
                             }
-                            Button(onClick = {
-                                folderPickerLauncher.launch(null)
-                            }) {
-                                Text("Pilih Folder Dataset")
+                            Button(onClick = { showDiagnostics = !showDiagnostics }) {
+                                Text(if (showDiagnostics) "Hide Diagnostics" else "Diagnostics")
                             }
                         }
-                        OutlinedButton(
-                            onClick = { viewModel.scanDatasetFolder() },
-                            enabled = !state.isScanning,
-                        ) {
-                            Text("Scan Dataset")
-                        }
-                        Text("Folder dataset: ${state.datasetFolderLabel}")
                     }
+                }
+            }
+            
+            item {
+                if (showDiagnostics) {
+                    DiagnosticsCard()
                 }
             }
 
@@ -275,11 +267,26 @@ private fun ResultSummaryCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("File: ${result.displayName}")
-            Text("Prediksi: ${result.predicted.label.displayName()} (${formatPercent(result.predicted.confidence)})")
-            Text("Aman: ${formatPercent(result.predicted.safeProbability)}")
-            Text("Malware: ${formatPercent(result.predicted.malwareProbability)}")
+            
+            // Display raw logits if available
+            if (result.predicted.rawScores.isNotEmpty()) {
+                Text("Logits: ${formatLogits(result.predicted.rawScores)}", style = MaterialTheme.typography.bodySmall)
+            }
+            
+            // Display probabilities in English format matching ML output
+            Text("Probability benign: ${formatPercent(result.predicted.safeProbability)}")
+            Text("Probability malware: ${formatPercent(result.predicted.malwareProbability)}")
+            
+            // Display prediction in English
+            val finalLabel = result.predicted.finalLabel()
+            val predictionText = when (finalLabel) {
+                PredictionLabel.SAFE -> "benign"
+                PredictionLabel.MALWARE -> "malware"
+            }
+            Text("Prediction: $predictionText", fontWeight = FontWeight.SemiBold)
+            
             result.expectedLabel?.let { expected ->
-                Text("Label folder: ${expected.displayName()}")
+                Text("Ekspektasi: ${expected.displayName()}", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -290,21 +297,93 @@ private fun ResultItemCard(result: ScanItemResult) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val itemFinalLabel = result.predicted.finalLabel()
+                val predictionText = when (itemFinalLabel) {
+                    PredictionLabel.SAFE -> "benign"
+                    PredictionLabel.MALWARE -> "malware"
+                }
                 AssistChip(
                     onClick = {},
-                    label = { Text(result.predicted.label.displayName()) },
+                    label = { Text(predictionText) },
                 )
                 result.expectedLabel?.let {
-                    AssistChip(onClick = {}, label = { Text("Ekspektasi: ${it.displayName()}") })
+                    AssistChip(onClick = {}, label = { Text("Expected: ${it.displayName()}") })
                 }
             }
             Text(result.displayName, fontWeight = FontWeight.SemiBold)
+            
+            // Display raw logits if available
+            if (result.predicted.rawScores.isNotEmpty()) {
+                Text("Logits: ${formatLogits(result.predicted.rawScores)}", style = MaterialTheme.typography.bodySmall)
+            }
+            
+            // Display probabilities in ML output format
+            Text("Probability benign: ${formatPercent(result.predicted.safeProbability)}")
+            Text("Probability malware: ${formatPercent(result.predicted.malwareProbability)}")
             Text("Confidence: ${formatPercent(result.predicted.confidence)}")
-            Text("Safe: ${formatPercent(result.predicted.safeProbability)} | Malware: ${formatPercent(result.predicted.malwareProbability)}")
-            Text("Sumber: ${result.sourceHint ?: "-"}")
-            Text(result.isCorrect?.let { if (it) "Sesuai label" else "Tidak sesuai label" } ?: "Label pembanding tidak tersedia")
+            Text("Source: ${result.sourceHint ?: "-"}")
+            Text(result.isCorrect?.let { if (it) "Matches label" else "Incorrect" } ?: "Label not available")
         }
         HorizontalDivider()
+    }
+}
+
+@Composable
+private fun DiagnosticsCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Model Configuration (malware_model_binary.onnx)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            
+            // Output Index Display (fixed now)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Output Index Malware: ${BinaryImagePreprocessor.outputIndexMalware} (FIXED)", Modifier.weight(1f))
+                Text("✅", style = MaterialTheme.typography.bodySmall)
+            }
+            
+            // ImageNet Normalization Status (mandatory)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("ImageNet Normalization: ON (MANDATORY)", Modifier.weight(1f))
+                Text("✅", style = MaterialTheme.typography.bodySmall)
+            }
+            
+            Text("mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]", 
+                style = MaterialTheme.typography.labelSmall)
+            
+            // Optional Tuning
+            Text("Optional Tuning:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            
+            PreprocessingToggle("Use Bitmap Decode (for .png/.jpg)", BinaryImagePreprocessor.useBitmapDecodeForImages) { 
+                BinaryImagePreprocessor.useBitmapDecodeForImages = it 
+            }
+            PreprocessingToggle("Centered Normalization (-1..1)", BinaryImagePreprocessor.useCenteredNormalization) {
+                BinaryImagePreprocessor.useCenteredNormalization = it
+            }
+            PreprocessingToggle("BGR Order", BinaryImagePreprocessor.useBgr) {
+                BinaryImagePreprocessor.useBgr = it
+            }
+            
+            Text("⚠️ Critical settings (output index, ImageNet norm) are FIXED for model accuracy.", 
+                style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun PreprocessingToggle(label: String, value: Boolean, onValueChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        AssistChip(
+            onClick = { onValueChange(!value) },
+            label = { Text(if (value) "ON" else "OFF") },
+        )
     }
 }
 
@@ -315,18 +394,15 @@ private fun progressText(progress: ScanProgress): String {
 
 private fun formatPercent(value: Float): String = "${(value * 100f).toInt()}%"
 
+private fun formatLogits(scores: FloatArray): String {
+    if (scores.isEmpty()) return "[]"
+    val formatted = scores.joinToString(", ") { "%.7g".format(it) }
+    return "[ $formatted ]"
+}
+
 private fun persistReadPermission(context: Context, uri: Uri) {
     runCatching {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-}
-
-private fun persistTreePermission(context: Context, uri: Uri) {
-    runCatching {
-        context.contentResolver.takePersistableUriPermission(
-            uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-        )
     }
 }
 
@@ -339,11 +415,3 @@ private fun resolveDisplayName(context: Context, uri: Uri): String {
     }
     return uri.lastPathSegment?.substringAfterLast('/') ?: uri.toString()
 }
-
-private fun PredictionLabel.displayName(): String = when (this) {
-    PredictionLabel.SAFE -> "Aman"
-    PredictionLabel.MALWARE -> "Malware"
-}
-
-
-

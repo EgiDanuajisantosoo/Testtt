@@ -24,7 +24,7 @@ class ScannerRepository(
         pathHint: String? = displayName,
     ): ScanItemResult = withContext(Dispatchers.IO) {
         val bytes = readBytes(uri)
-        val score = classifier.classify(bytes)
+        val score = classifier.classify(bytes, displayName)
         val expectedLabel = inferExpectedLabel(pathHint)
         ScanItemResult(
             displayName = displayName,
@@ -62,7 +62,7 @@ class ScannerRepository(
                 )
             )
 
-            val score = classifier.classify(readBytes(entry.document.uri))
+            val score = classifier.classify(readBytes(entry.document.uri), entry.displayName)
             val expectedLabel = inferExpectedLabel(entry.pathHint)
             val result = ScanItemResult(
                 displayName = entry.displayName,
