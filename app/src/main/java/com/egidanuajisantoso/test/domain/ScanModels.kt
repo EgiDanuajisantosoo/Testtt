@@ -69,7 +69,7 @@ object BinaryImagePreprocessor {
     var useCenteredNormalization: Boolean = false // false => 0..1, true => -1..1
 
     @Volatile
-    var useBgr: Boolean = false // false => RGB order, true => BGR order
+    var useBgr: Boolean = true // REQUIRED for model accuracy with certain malware-to-image conversions
 
     /**
      * CRITICAL: ImageNet normalization is REQUIRED for malware_model_binary.onnx.
@@ -81,7 +81,7 @@ object BinaryImagePreprocessor {
 
     // If true, decode image files as RGB bitmaps before tensor conversion.
     @Volatile
-    var useBitmapDecodeForImages: Boolean = false
+    var useBitmapDecodeForImages: Boolean = true
     
     /**
      * Output index mapping based on model architecture.

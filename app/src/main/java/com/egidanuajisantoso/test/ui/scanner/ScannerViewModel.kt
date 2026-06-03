@@ -71,10 +71,11 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         isScanning = false,
                         progress = ScanProgress(1, 1, displayName),
                         singleScanResult = result,
-                        datasetResults = listOf(result),
+                        datasetResults = (listOf(result) + it.datasetResults).take(10),
                         datasetSummary = buildSummaryFromSingle(result),
                         infoMessage = buildResultMessage(result),
                         errorMessage = null,
+                        lastCheckedTime = System.currentTimeMillis()
                     )
                 }
             }.onFailure { throwable ->
@@ -131,6 +132,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         progress = ScanProgress(summary.totalFiles, summary.totalFiles, "Selesai"),
                         infoMessage = buildSummaryMessage(summary),
                         errorMessage = null,
+                        lastCheckedTime = System.currentTimeMillis()
                     )
                 }
             }.onFailure { throwable ->
@@ -208,5 +210,6 @@ data class ScannerUiState(
     val datasetSummary: DatasetSummary? = null,
     val infoMessage: String? = null,
     val errorMessage: String? = null,
+    val lastCheckedTime: Long? = null,
 )
 

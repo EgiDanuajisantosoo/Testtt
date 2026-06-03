@@ -5,13 +5,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -93,13 +93,14 @@ fun ScannerScreen(
             // Device Status Section
             item {
                 DeviceStatusHeader()
-                StatusCard()
+                StatusCard(state.lastCheckedTime)
             }
 
             // Real-time Shield Section
             item {
                 RealTimeShieldCard(
-                    isEnabled = state.monitorStatus.contains("Running", ignoreCase = true),
+                    isEnabled = state.monitorStatus.contains("aktif", ignoreCase = true) || 
+                                state.monitorStatus.contains("Running", ignoreCase = true),
                     onToggle = { enabled ->
                         if (enabled) {
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -124,7 +125,7 @@ fun ScannerScreen(
             item {
                 ScanningToolsSection(
                     onQuickScan = { filePickerLauncher.launch(arrayOf("*/*")) },
-                    onFullScan = { /* Implement full scan if available */ }
+                    onFullScan = { viewModel.scanDatasetFolder() }
                 )
             }
 
@@ -162,7 +163,7 @@ fun DashboardTopBar() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Default.Menu,
+            imageVector = Icons.Default.MoreVert,
             contentDescription = "Menu",
             tint = Color.White
         )
@@ -175,7 +176,7 @@ fun DashboardTopBar() {
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Lock,
+                imageVector = Icons.Default.Shield,
                 contentDescription = "Logo",
                 tint = Color.White,
                 modifier = Modifier.size(24.dp)
@@ -223,7 +224,7 @@ fun DeviceStatusHeader() {
 }
 
 @Composable
-fun StatusCard() {
+fun StatusCard(lastChecked: Long?) {
     Card(
         modifier = Modifier
             .fillMaxWidth(),
@@ -232,7 +233,7 @@ fun StatusCard() {
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Icon(
-                imageVector = Icons.Default.Lock,
+                imageVector = Icons.Default.Shield,
                 contentDescription = null,
                 modifier = Modifier
                     .size(140.dp)
@@ -265,7 +266,8 @@ fun StatusCard() {
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Checked 12m ago",
+                            text = if (lastChecked == null) "Not checked yet" 
+                                   else "Checked ${formatRelativeTime(lastChecked)}",
                             color = Color.White.copy(alpha = 0.7f),
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -307,7 +309,7 @@ fun RealTimeShieldCard(isEnabled: Boolean, onToggle: (Boolean) -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Info,
+                    imageVector = Icons.Default.Bolt,
                     contentDescription = null,
                     tint = Color(0xFF4FC3F7),
                     modifier = Modifier.size(24.dp)
@@ -372,7 +374,7 @@ fun ScanningToolsSection(onQuickScan: () -> Unit, onFullScan: () -> Unit) {
                 title = "Quick File Scan",
                 description = "Scan specific files, APKs, or folders instantly.",
                 buttonText = "Choose File",
-                icon = Icons.Default.Build,
+                icon = Icons.Default.CreateNewFolder,
                 onButtonClick = onQuickScan,
                 isPrimary = false
             )
@@ -381,7 +383,7 @@ fun ScanningToolsSection(onQuickScan: () -> Unit, onFullScan: () -> Unit) {
                 title = "Full Device Scan",
                 description = "Comprehensive system-wide audit for security.",
                 buttonText = "Start Full Scan",
-                icon = Icons.Default.Search,
+                icon = Icons.Default.TrackChanges,
                 onButtonClick = onFullScan,
                 isPrimary = true
             )
@@ -464,7 +466,7 @@ fun RecentActivitySection(results: List<ScanItemResult>) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Info,
+                    imageVector = Icons.Default.History,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
@@ -487,24 +489,18 @@ fun RecentActivitySection(results: List<ScanItemResult>) {
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (results.isEmpty()) {
-                ActivityItem(
-                    title = "Full Device Scan",
-                    subtitle = "Today, 10:45 AM",
-                    status = "Clean",
-                    isSecure = true
-                )
-                ActivityItem(
-                    title = "Quick Scan: Download.zip",
-                    subtitle = "Yesterday, 04:20 PM",
-                    status = "Threats",
-                    isSecure = false
-                )
-                ActivityItem(
-                    title = "System Background Scan",
-                    subtitle = "2 days ago, 09:12 AM",
-                    status = "Clean",
-                    isSecure = true
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No recent activity",
+                        color = TextGrey,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             } else {
                 results.take(3).forEach { result ->
                     val isSafe = result.predicted.finalLabel() == PredictionLabel.SAFE
@@ -581,53 +577,57 @@ fun ActivityItem(title: String, subtitle: String, status: String, isSecure: Bool
 
 @Composable
 fun DashboardBottomBar() {
-    NavigationBar(
-        containerColor = DashboardBackground,
-        tonalElevation = 0.dp,
-        modifier = Modifier.height(80.dp)
-    ) {
-        NavigationBarItem(
-            selected = true,
-            onClick = { },
-            icon = { 
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Home, contentDescription = "Home", modifier = Modifier.size(28.dp))
-                }
-            },
-            label = { Text("Home") },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = AccentPurple,
-                selectedTextColor = AccentPurple,
-                unselectedIconColor = TextGrey,
-                unselectedTextColor = TextGrey,
-                indicatorColor = Color.Transparent
+    Column {
+        HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
+        NavigationBar(
+            containerColor = DashboardBackground,
+            tonalElevation = 0.dp,
+            modifier = Modifier.height(80.dp)
+        ) {
+            NavigationBarItem(
+                selected = true,
+                onClick = { },
+                icon = { 
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(AccentPurple.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Home, contentDescription = "Home", modifier = Modifier.size(26.dp))
+                    }
+                },
+                label = { Text("Home", fontSize = 11.sp) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = AccentPurple,
+                    selectedTextColor = AccentPurple,
+                    unselectedIconColor = TextGrey,
+                    unselectedTextColor = TextGrey,
+                    indicatorColor = Color.Transparent
+                )
             )
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = { },
-            icon = { Icon(Icons.Default.Info, contentDescription = "History", modifier = Modifier.size(28.dp)) },
-            label = { Text("History") },
-            colors = NavigationBarItemDefaults.colors(
-                unselectedIconColor = TextGrey,
-                unselectedTextColor = TextGrey
+            NavigationBarItem(
+                selected = false,
+                onClick = { },
+                icon = { Icon(Icons.Default.History, contentDescription = "History", modifier = Modifier.size(26.dp)) },
+                label = { Text("History", fontSize = 11.sp) },
+                colors = NavigationBarItemDefaults.colors(
+                    unselectedIconColor = TextGrey,
+                    unselectedTextColor = TextGrey
+                )
             )
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = { },
-            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(28.dp)) },
-            label = { Text("Settings") },
-            colors = NavigationBarItemDefaults.colors(
-                unselectedIconColor = TextGrey,
-                unselectedTextColor = TextGrey
+            NavigationBarItem(
+                selected = false,
+                onClick = { },
+                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(26.dp)) },
+                label = { Text("Settings", fontSize = 11.sp) },
+                colors = NavigationBarItemDefaults.colors(
+                    unselectedIconColor = TextGrey,
+                    unselectedTextColor = TextGrey
+                )
             )
-        )
+        }
     }
 }
 
@@ -658,6 +658,15 @@ fun ScanningProgressCard(progress: ScanProgress?) {
                 )
             }
         }
+    }
+}
+
+private fun formatRelativeTime(timeMillis: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timeMillis
+    return when {
+        diff < 60000 -> "just now"
+        else -> DateUtils.getRelativeTimeSpanString(timeMillis, now, DateUtils.MINUTE_IN_MILLIS).toString()
     }
 }
 
