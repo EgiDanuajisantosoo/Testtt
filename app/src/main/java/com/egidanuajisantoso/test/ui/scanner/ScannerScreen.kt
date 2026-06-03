@@ -369,7 +369,7 @@ fun ScanningToolsSection(onQuickScan: () -> Unit, onFullScan: () -> Unit) {
                 buttonText = "Choose File",
                 icon = Icons.Default.CreateNewFolder,
                 onButtonClick = onQuickScan,
-                isPrimary = false
+                isPrimary = false,
             )
             ToolCard(
                 modifier = Modifier.weight(1f),
@@ -438,7 +438,8 @@ fun ToolCard(
                 onClick = onButtonClick,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isPrimary) AccentPurple else Color.Black
+                    containerColor = if (isPrimary) AccentPurple else Color.Black,
+                    contentColor = if (isPrimary) Color.Black else Color.White
                 ),
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(vertical = 10.dp)
