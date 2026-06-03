@@ -12,9 +12,9 @@ import com.egidanuajisantoso.test.domain.DatasetSummary
 import com.egidanuajisantoso.test.domain.PredictionLabel
 import com.egidanuajisantoso.test.domain.ScanItemResult
 import com.egidanuajisantoso.test.domain.ScanProgress
+import com.egidanuajisantoso.test.domain.ScanResultBus
 import com.egidanuajisantoso.test.service.FolderMonitorService
 import com.egidanuajisantoso.test.storage.TreeUriStore
-import com.egidanuajisantoso.test.domain.ScanResultBus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +25,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     private val repository = ScannerRepository(application.applicationContext)
     private val treeUriStore = TreeUriStore(application.applicationContext)
     private val appContext = application.applicationContext
+    private val prefs = appContext.getSharedPreferences("scanner_prefs", android.content.Context.MODE_PRIVATE)
 
     private var datasetTreeUri: Uri? = treeUriStore.loadDatasetTreeUri()
 
@@ -32,12 +33,12 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         ScannerUiState(
             datasetFolderLabel = datasetTreeUri?.let { it.toString() } ?: "Belum ada folder dataset",
             monitorPath = defaultMonitorPath(),
+            isMonitorRunning = isServiceRunning()
         )
     )
     val uiState: StateFlow<ScannerUiState> = _uiState.asStateFlow()
 
     init {
-        // Collect background scan results and show them on the dashboard immediately
         viewModelScope.launch {
             ScanResultBus.events.collect { result ->
                 _uiState.update { current ->
@@ -48,6 +49,17 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    private fun isServiceRunning(): Boolean {
+        val manager = appContext.getSystemService(android.app.ActivityManager::class.java) ?: return false
+        @Suppress("DEPRECATION")
+        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+            if (FolderMonitorService::class.java.name == service.service.className) {
+                return true
+            }
+        }
+        return false
     }
 
     fun onDatasetFolderSelected(uri: Uri, displayName: String) {
@@ -168,6 +180,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun startMonitor() {
+        prefs.edit().putBoolean("monitor_enabled", true).apply()
         val path = _uiState.value.monitorPath.trim().ifBlank { defaultMonitorPath() }
 
         val intent = Intent(appContext, FolderMonitorService::class.java).apply {
@@ -195,6 +208,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun stopMonitor() {
+        prefs.edit().putBoolean("monitor_enabled", false).apply()
         val intent = Intent(appContext, FolderMonitorService::class.java)
         appContext.stopService(intent)
         _uiState.update { 
@@ -249,4 +263,3 @@ data class ScannerUiState(
     val errorMessage: String? = null,
     val lastCheckedTime: Long? = null,
 )
-

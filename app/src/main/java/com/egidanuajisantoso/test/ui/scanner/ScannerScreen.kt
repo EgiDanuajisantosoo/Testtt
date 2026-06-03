@@ -43,7 +43,28 @@ fun ScannerScreen(
     viewModel: ScannerViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    
+    // Auto-resume monitor if returning from settings with permission
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    if (android.os.Environment.isExternalStorageManager()) {
+                        // Check if we were supposed to be running
+                        val prefs = context.getSharedPreferences("scanner_prefs", android.content.Context.MODE_PRIVATE)
+                        if (prefs.getBoolean("monitor_enabled", false) && !state.isMonitorRunning) {
+                            viewModel.startMonitor()
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
     var startMonitorAfterPermission by remember { mutableStateOf(false) }
     var showQuickScanOptions by remember { mutableStateOf(false) }
