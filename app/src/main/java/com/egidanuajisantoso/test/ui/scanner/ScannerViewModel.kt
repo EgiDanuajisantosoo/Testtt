@@ -43,7 +43,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             ScanResultBus.events.collect { result ->
                 _uiState.update { current ->
                     current.copy(
-                        datasetResults = (listOf(result) + current.datasetResults).take(10).distinctBy { it.uri },
+                        datasetResults = (listOf(result) + current.datasetResults).take(50).distinctBy { it.uri },
                         lastCheckedTime = System.currentTimeMillis()
                     )
                 }
@@ -60,6 +60,14 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         return false
+    }
+
+    fun navigateTo(screen: ScannerScreenType) {
+        _uiState.update { it.copy(currentScreen = screen) }
+    }
+
+    fun setHistoryFilter(filter: HistoryFilter) {
+        _uiState.update { it.copy(historyFilter = filter) }
     }
 
     fun onDatasetFolderSelected(uri: Uri, displayName: String) {
@@ -98,7 +106,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         isScanning = false,
                         progress = ScanProgress(1, 1, displayName),
                         singleScanResult = result,
-                        datasetResults = (listOf(result) + it.datasetResults).take(10),
+                        datasetResults = (listOf(result) + it.datasetResults).take(50).distinctBy { it.uri },
                         datasetSummary = buildSummaryFromSingle(result),
                         infoMessage = buildResultMessage(result),
                         errorMessage = null,
@@ -152,7 +160,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     onItemResult = { result ->
                         results += result
                         _uiState.update { current -> 
-                            current.copy(datasetResults = (results.toList() + current.datasetResults).take(10).distinctBy { it.uri }) 
+                            current.copy(datasetResults = (results.toList() + current.datasetResults).take(50).distinctBy { it.uri }) 
                         }
                     },
                 )
@@ -250,6 +258,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 }
 
 data class ScannerUiState(
+    val currentScreen: ScannerScreenType = ScannerScreenType.DASHBOARD,
+    val historyFilter: HistoryFilter = HistoryFilter.FOUND,
     val datasetFolderLabel: String = "Belum ada folder dataset",
     val monitorPath: String = "",
     val monitorStatus: String = "Monitor belum aktif",
@@ -263,3 +273,14 @@ data class ScannerUiState(
     val errorMessage: String? = null,
     val lastCheckedTime: Long? = null,
 )
+
+enum class ScannerScreenType {
+    DASHBOARD,
+    HISTORY,
+    SETTINGS
+}
+
+enum class HistoryFilter {
+    FOUND,
+    CLEAN
+}

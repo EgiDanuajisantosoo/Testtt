@@ -10,12 +10,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -52,7 +57,6 @@ fun ScannerScreen(
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     if (android.os.Environment.isExternalStorageManager()) {
-                        // Check if we were supposed to be running
                         val prefs = context.getSharedPreferences("scanner_prefs", android.content.Context.MODE_PRIVATE)
                         if (prefs.getBoolean("monitor_enabled", false) && !state.isMonitorRunning) {
                             viewModel.startMonitor()
@@ -142,71 +146,437 @@ fun ScannerScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { DashboardTopBar() },
-        bottomBar = { DashboardBottomBar() },
+        topBar = {
+            if (state.currentScreen == ScannerScreenType.DASHBOARD) {
+                DashboardTopBar()
+            } else if (state.currentScreen == ScannerScreenType.HISTORY) {
+                HistoryTopBar(onBack = { viewModel.navigateTo(ScannerScreenType.DASHBOARD) })
+            }
+        },
+        bottomBar = {
+            DashboardBottomBar(
+                currentScreen = state.currentScreen,
+                onNavigate = { viewModel.navigateTo(it) }
+            )
+        },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         containerColor = DashboardBackground
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            item { Spacer(modifier = Modifier.height(8.dp)) }
-
-            // Device Status Section
-            item {
-                DeviceStatusHeader()
-                StatusCard(state.lastCheckedTime)
-            }
-
-            // Real-time Shield Section
-            item {
-                RealTimeShieldCard(
-                    isEnabled = state.isMonitorRunning,
-                    onToggle = { enabled ->
-                        if (enabled) {
-                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                                ContextCompat.checkSelfPermission(
-                                    context,
-                                    android.Manifest.permission.POST_NOTIFICATIONS,
-                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                            ) {
-                                requestStorageAndStartMonitor(context, viewModel)
-                            } else {
-                                startMonitorAfterPermission = true
-                                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        } else {
-                            viewModel.stopMonitor()
-                        }
-                    }
+        when (state.currentScreen) {
+            ScannerScreenType.DASHBOARD -> {
+                DashboardContent(
+                    padding = padding,
+                    state = state,
+                    context = context,
+                    viewModel = viewModel,
+                    onQuickScanClick = { showQuickScanOptions = true },
+                    onViewAllClick = { viewModel.navigateTo(ScannerScreenType.HISTORY) },
+                    startMonitorAfterPermission = { startMonitorAfterPermission = it },
+                    notificationPermissionLauncher = notificationPermissionLauncher
                 )
             }
-
-            // Scanning Tools Section
-            item {
-                ScanningToolsSection(
-                    onQuickScan = { showQuickScanOptions = true },
-                    onFullScan = { viewModel.scanDatasetFolder() }
+            ScannerScreenType.HISTORY -> {
+                HistoryContent(
+                    padding = padding,
+                    state = state,
+                    onFilterChange = { viewModel.setHistoryFilter(it) }
                 )
             }
-
-            // Recent Activity Section
-            item {
-                RecentActivitySection(results = state.datasetResults)
-            }
-
-            // Existing Scanning Progress
-            if (state.isScanning) {
-                item {
-                    ScanningProgressCard(state.progress)
+            ScannerScreenType.SETTINGS -> {
+                // Placeholder for Settings
+                Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Text("Settings Screen", color = Color.White)
                 }
             }
+        }
+    }
+}
 
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+@Composable
+fun DashboardContent(
+    padding: PaddingValues,
+    state: ScannerUiState,
+    context: Context,
+    viewModel: ScannerViewModel,
+    onQuickScanClick: () -> Unit,
+    onViewAllClick: () -> Unit,
+    startMonitorAfterPermission: (Boolean) -> Unit,
+    notificationPermissionLauncher: androidx.activity.result.ActivityResultLauncher<String>
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        item { Spacer(modifier = Modifier.height(8.dp)) }
+
+        // Device Status Section
+        item {
+            DeviceStatusHeader()
+            StatusCard(state.lastCheckedTime)
+        }
+
+        // Real-time Shield Section
+        item {
+            RealTimeShieldCard(
+                isEnabled = state.isMonitorRunning,
+                onToggle = { enabled ->
+                    if (enabled) {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                android.Manifest.permission.POST_NOTIFICATIONS,
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            requestStorageAndStartMonitor(context, viewModel)
+                        } else {
+                            startMonitorAfterPermission(true)
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    } else {
+                        viewModel.stopMonitor()
+                    }
+                }
+            )
+        }
+
+        // Scanning Tools Section
+        item {
+            ScanningToolsSection(
+                onQuickScan = onQuickScanClick,
+                onFullScan = { viewModel.scanDatasetFolder() }
+            )
+        }
+
+        // Recent Activity Section
+        item {
+            RecentActivitySection(results = state.datasetResults, onViewAll = onViewAllClick)
+        }
+
+        // Existing Scanning Progress
+        if (state.isScanning) {
+            item {
+                ScanningProgressCard(state.progress)
+            }
+        }
+
+        item { Spacer(modifier = Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+fun HistoryContent(
+    padding: PaddingValues,
+    state: ScannerUiState,
+    onFilterChange: (HistoryFilter) -> Unit
+) {
+    val foundResults = state.datasetResults.filter { it.predicted.finalLabel() == PredictionLabel.MALWARE }
+    val cleanResults = state.datasetResults.filter { it.predicted.finalLabel() == PredictionLabel.SAFE }
+    
+    val currentList = if (state.historyFilter == HistoryFilter.FOUND) foundResults else cleanResults
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            HistoryFilterTabs(
+                selectedFilter = state.historyFilter,
+                foundCount = foundResults.size,
+                onFilterChange = onFilterChange
+            )
+        }
+
+        item {
+            ThreatStatusHeader(threatCount = foundResults.size)
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "DETECTED FILES",
+                    color = TextGrey,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                if (foundResults.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(ThreatRed.copy(alpha = 0.1f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            "ACTION REQUIRED",
+                            color = ThreatRed,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        if (currentList.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                    Text("No results found", color = TextGrey)
+                }
+            }
+        } else {
+            items(currentList) { result ->
+                HistoryItemCard(result)
+            }
+        }
+
+        item {
+            HistorySummaryStats(scannedCount = state.datasetResults.size, threatCount = foundResults.size)
+        }
+
+        item {
+            Button(
+                onClick = { /* Resolve logic */ },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ThreatRed),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Default.Security, contentDescription = null, tint = Color.Black)
+                Spacer(Modifier.width(8.dp))
+                Text("Resolve All ${foundResults.size} Threats", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        item { Spacer(modifier = Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+fun HistoryFilterTabs(
+    selectedFilter: HistoryFilter,
+    foundCount: Int,
+    onFilterChange: (HistoryFilter) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(DarkGreyCard)
+            .padding(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (selectedFilter == HistoryFilter.FOUND) Color.Black else Color.Transparent)
+                .clickable { onFilterChange(HistoryFilter.FOUND) },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "Found ($foundCount)",
+                color = if (selectedFilter == HistoryFilter.FOUND) Color.White else TextGrey,
+                fontWeight = if (selectedFilter == HistoryFilter.FOUND) FontWeight.Bold else FontWeight.Normal,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (selectedFilter == HistoryFilter.CLEAN) Color.Black else Color.Transparent)
+                .clickable { onFilterChange(HistoryFilter.CLEAN) },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "Clean",
+                color = if (selectedFilter == HistoryFilter.CLEAN) Color.White else TextGrey,
+                fontWeight = if (selectedFilter == HistoryFilter.CLEAN) FontWeight.Bold else FontWeight.Normal,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+
+@Composable
+fun ThreatStatusHeader(threatCount: Int) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0A0A)) // Very dark red
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(ThreatRed.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = ThreatRed,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            
+            Text(
+                text = "$threatCount Threats Detected",
+                color = ThreatRed,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Text(
+                text = "We found critical threats that require immediate attention to protect your personal data.",
+                color = TextGrey,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun HistoryItemCard(result: ScanItemResult) {
+    val isMalware = result.predicted.finalLabel() == PredictionLabel.MALWARE
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isMalware) ThreatRed.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.05f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isMalware) Icons.Default.BugReport else Icons.Default.Description,
+                        contentDescription = null,
+                        tint = if (isMalware) ThreatRed else Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                
+                Spacer(Modifier.width(12.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (isMalware) "malware.${result.displayName.substringAfterLast('.').lowercase()}" else result.displayName,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.1f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                result.displayName.substringAfterLast('.').uppercase(),
+                                color = TextGrey,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Text(
+                        text = result.sourceHint ?: "/storage/emulated/0/...",
+                        color = TextGrey,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1
+                    )
+                }
+            }
+            
+            HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isMalware) Icons.Default.Warning else Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = if (isMalware) ThreatRed else Color.Green,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (isMalware) "HIGH SEVERITY" else "CLEAN",
+                        color = if (isMalware) ThreatRed else Color.Green,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
+                Row(
+                    modifier = Modifier.clickable { /* Delete logic */ },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Delete", color = ThreatRed, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HistorySummaryStats(scannedCount: Int, threatCount: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        StatBox(Modifier.weight(1f), "Scanned", String.format("%,d", scannedCount), Icons.Default.Search)
+        StatBox(Modifier.weight(1f), "Time", "4m 32s", Icons.Default.Schedule)
+        StatBox(Modifier.weight(1f), "Threats", String.format("%02d", threatCount), Icons.Default.ErrorOutline)
+    }
+}
+
+@Composable
+fun StatBox(modifier: Modifier, label: String, value: String, icon: ImageVector) {
+    Card(
+        modifier = modifier.height(100.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = TextGrey, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(label, color = TextGrey, style = MaterialTheme.typography.labelSmall)
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
@@ -257,6 +627,39 @@ fun DashboardTopBar() {
                     .border(1.5.dp, Color.Black, CircleShape)
             )
         }
+    }
+}
+
+@Composable
+fun HistoryTopBar(onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Back",
+            tint = Color.White,
+            modifier = Modifier.clickable { onBack() }
+        )
+        
+        Text(
+            "Scan Results",
+            color = Color.White,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        Icon(
+            imageVector = Icons.Default.AccountCircle,
+            contentDescription = "Profile",
+            tint = Color.White,
+            modifier = Modifier.size(32.dp)
+        )
     }
 }
 
@@ -517,7 +920,7 @@ fun ToolCard(
 }
 
 @Composable
-fun RecentActivitySection(results: List<ScanItemResult>) {
+fun RecentActivitySection(results: List<ScanItemResult>, onViewAll: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -543,7 +946,8 @@ fun RecentActivitySection(results: List<ScanItemResult>) {
                 text = "View All",
                 color = AccentPurple,
                 style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onViewAll() }
             )
         }
 
@@ -636,7 +1040,7 @@ fun ActivityItem(title: String, subtitle: String, status: String, isSecure: Bool
 }
 
 @Composable
-fun DashboardBottomBar() {
+fun DashboardBottomBar(currentScreen: ScannerScreenType, onNavigate: (ScannerScreenType) -> Unit) {
     Column {
         HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
         NavigationBar(
@@ -645,25 +1049,25 @@ fun DashboardBottomBar() {
             windowInsets = NavigationBarDefaults.windowInsets
         ) {
             NavigationBarItem(
-                selected = true,
-                onClick = { },
+                selected = currentScreen == ScannerScreenType.DASHBOARD,
+                onClick = { onNavigate(ScannerScreenType.DASHBOARD) },
                 alwaysShowLabel = true,
                 icon = {
                     Box(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(AccentPurple.copy(alpha = 0.2f)),
+                            .background(if (currentScreen == ScannerScreenType.DASHBOARD) AccentPurple.copy(alpha = 0.2f) else Color.Transparent),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Home,
+                            imageVector = if (currentScreen == ScannerScreenType.DASHBOARD) Icons.Default.Home else Icons.Outlined.Home,
                             contentDescription = "Home",
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 },
-                label = { Text("Home", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
+                label = { Text("Home", fontSize = 11.sp, fontWeight = if (currentScreen == ScannerScreenType.DASHBOARD) FontWeight.Bold else FontWeight.Normal) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = AccentPurple,
                     selectedTextColor = AccentPurple,
@@ -673,37 +1077,59 @@ fun DashboardBottomBar() {
                 )
             )
             NavigationBarItem(
-                selected = false,
-                onClick = { },
+                selected = currentScreen == ScannerScreenType.HISTORY,
+                onClick = { onNavigate(ScannerScreenType.HISTORY) },
                 alwaysShowLabel = true,
                 icon = {
-                    Icon(
-                        imageVector = Icons.Default.History,
-                        contentDescription = "History",
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (currentScreen == ScannerScreenType.HISTORY) AccentPurple.copy(alpha = 0.2f) else Color.Transparent),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (currentScreen == ScannerScreenType.HISTORY) Icons.Default.History else Icons.Outlined.History,
+                            contentDescription = "History",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 },
-                label = { Text("History", fontSize = 12.sp) },
+                label = { Text("History", fontSize = 11.sp, fontWeight = if (currentScreen == ScannerScreenType.HISTORY) FontWeight.Bold else FontWeight.Normal) },
                 colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = AccentPurple,
+                    selectedTextColor = AccentPurple,
                     unselectedIconColor = TextGrey,
-                    unselectedTextColor = TextGrey
+                    unselectedTextColor = TextGrey,
+                    indicatorColor = Color.Transparent
                 )
             )
             NavigationBarItem(
-                selected = false,
-                onClick = { },
+                selected = currentScreen == ScannerScreenType.SETTINGS,
+                onClick = { onNavigate(ScannerScreenType.SETTINGS) },
                 alwaysShowLabel = true,
                 icon = {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings",
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (currentScreen == ScannerScreenType.SETTINGS) AccentPurple.copy(alpha = 0.2f) else Color.Transparent),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (currentScreen == ScannerScreenType.SETTINGS) Icons.Default.Settings else Icons.Outlined.Settings,
+                            contentDescription = "Settings",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 },
-                label = { Text("Settings", fontSize = 12.sp) },
+                label = { Text("Settings", fontSize = 11.sp, fontWeight = if (currentScreen == ScannerScreenType.SETTINGS) FontWeight.Bold else FontWeight.Normal) },
                 colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = AccentPurple,
+                    selectedTextColor = AccentPurple,
                     unselectedIconColor = TextGrey,
-                    unselectedTextColor = TextGrey
+                    unselectedTextColor = TextGrey,
+                    indicatorColor = Color.Transparent
                 )
             )
         }
