@@ -149,24 +149,40 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     fun startMonitor() {
         val path = _uiState.value.monitorPath.trim().ifBlank { defaultMonitorPath() }
-        _uiState.update { it.copy(monitorStatus = "Memulai pemantauan...") }
 
         val intent = Intent(appContext, FolderMonitorService::class.java).apply {
             putExtra(FolderMonitorService.EXTRA_MONITOR_PATH, path)
         }
-        ContextCompat.startForegroundService(appContext, intent)
-        _uiState.update {
-            it.copy(
-                monitorStatus = "Monitoring aktif: $path",
-                errorMessage = null,
-            )
+        
+        try {
+            ContextCompat.startForegroundService(appContext, intent)
+            _uiState.update {
+                it.copy(
+                    monitorStatus = "Monitoring aktif: $path",
+                    isMonitorRunning = true,
+                    errorMessage = null,
+                )
+            }
+        } catch (e: Exception) {
+            _uiState.update {
+                it.copy(
+                    monitorStatus = "Gagal memulai monitor",
+                    isMonitorRunning = false,
+                    errorMessage = e.message
+                )
+            }
         }
     }
 
     fun stopMonitor() {
         val intent = Intent(appContext, FolderMonitorService::class.java)
         appContext.stopService(intent)
-        _uiState.update { it.copy(monitorStatus = "Monitoring dihentikan") }
+        _uiState.update { 
+            it.copy(
+                monitorStatus = "Monitoring dihentikan",
+                isMonitorRunning = false
+            ) 
+        }
     }
 
     private fun defaultMonitorPath(): String {
@@ -203,6 +219,7 @@ data class ScannerUiState(
     val datasetFolderLabel: String = "Belum ada folder dataset",
     val monitorPath: String = "",
     val monitorStatus: String = "Monitor belum aktif",
+    val isMonitorRunning: Boolean = false,
     val isScanning: Boolean = false,
     val progress: ScanProgress? = null,
     val singleScanResult: ScanItemResult? = null,

@@ -99,8 +99,7 @@ fun ScannerScreen(
             // Real-time Shield Section
             item {
                 RealTimeShieldCard(
-                    isEnabled = state.monitorStatus.contains("aktif", ignoreCase = true) || 
-                                state.monitorStatus.contains("Running", ignoreCase = true),
+                    isEnabled = state.isMonitorRunning,
                     onToggle = { enabled ->
                         if (enabled) {
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -138,12 +137,6 @@ fun ScannerScreen(
             if (state.isScanning) {
                 item {
                     ScanningProgressCard(state.progress)
-                }
-            }
-
-            item {
-                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-                    Text(text = "Made with ❤️ by SafeScan", color = TextGrey, style = MaterialTheme.typography.labelSmall)
                 }
             }
 
@@ -582,23 +575,28 @@ fun DashboardBottomBar() {
         NavigationBar(
             containerColor = DashboardBackground,
             tonalElevation = 0.dp,
-            modifier = Modifier.height(80.dp)
+            windowInsets = NavigationBarDefaults.windowInsets
         ) {
             NavigationBarItem(
                 selected = true,
                 onClick = { },
-                icon = { 
+                alwaysShowLabel = true,
+                icon = {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(AccentPurple.copy(alpha = 0.15f)),
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(AccentPurple.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Home, contentDescription = "Home", modifier = Modifier.size(26.dp))
+                        Icon(
+                            imageVector = Icons.Default.Home,
+                            contentDescription = "Home",
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 },
-                label = { Text("Home", fontSize = 11.sp) },
+                label = { Text("Home", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = AccentPurple,
                     selectedTextColor = AccentPurple,
@@ -610,8 +608,15 @@ fun DashboardBottomBar() {
             NavigationBarItem(
                 selected = false,
                 onClick = { },
-                icon = { Icon(Icons.Default.History, contentDescription = "History", modifier = Modifier.size(26.dp)) },
-                label = { Text("History", fontSize = 11.sp) },
+                alwaysShowLabel = true,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = "History",
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                label = { Text("History", fontSize = 12.sp) },
                 colors = NavigationBarItemDefaults.colors(
                     unselectedIconColor = TextGrey,
                     unselectedTextColor = TextGrey
@@ -620,8 +625,15 @@ fun DashboardBottomBar() {
             NavigationBarItem(
                 selected = false,
                 onClick = { },
-                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(26.dp)) },
-                label = { Text("Settings", fontSize = 11.sp) },
+                alwaysShowLabel = true,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                label = { Text("Settings", fontSize = 12.sp) },
                 colors = NavigationBarItemDefaults.colors(
                     unselectedIconColor = TextGrey,
                     unselectedTextColor = TextGrey
