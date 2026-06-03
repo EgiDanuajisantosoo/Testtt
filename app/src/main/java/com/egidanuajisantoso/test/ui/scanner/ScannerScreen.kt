@@ -46,6 +46,7 @@ fun ScannerScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var startMonitorAfterPermission by remember { mutableStateOf(false) }
+    var showQuickScanOptions by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -54,6 +55,17 @@ fun ScannerScreen(
                 persistReadPermission(context, uri)
                 val displayName = resolveDisplayName(context, uri)
                 viewModel.scanSelectedFile(uri = uri, displayName = displayName, pathHint = displayName)
+            }
+        },
+    )
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+        onResult = { uri ->
+            if (uri != null) {
+                persistReadPermission(context, uri)
+                val displayName = resolveDisplayName(context, uri)
+                viewModel.scanSpecificFolder(treeUri = uri, displayName = displayName)
             }
         },
     )
@@ -72,6 +84,39 @@ fun ScannerScreen(
 
     LaunchedEffect(state.errorMessage) {
         state.errorMessage?.let { snackbarHostState.showSnackbar(it) }
+    }
+
+    if (showQuickScanOptions) {
+        AlertDialog(
+            onDismissRequest = { showQuickScanOptions = false },
+            title = { Text("Quick Scan", fontWeight = FontWeight.Bold) },
+            text = { Text("Pilih sumber yang ingin Anda pindai secara instan.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showQuickScanOptions = false
+                        filePickerLauncher.launch(arrayOf("*/*"))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                ) {
+                    Text("Pilih File", color = Color.Black)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showQuickScanOptions = false
+                        folderPickerLauncher.launch(null)
+                    },
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple)
+                ) {
+                    Text("Pilih Folder", color = AccentPurple)
+                }
+            },
+            containerColor = DarkGreyCard,
+            titleContentColor = Color.White,
+            textContentColor = TextGrey
+        )
     }
 
     Scaffold(
@@ -123,7 +168,7 @@ fun ScannerScreen(
             // Scanning Tools Section
             item {
                 ScanningToolsSection(
-                    onQuickScan = { filePickerLauncher.launch(arrayOf("*/*")) },
+                    onQuickScan = { showQuickScanOptions = true },
                     onFullScan = { viewModel.scanDatasetFolder() }
                 )
             }
@@ -366,7 +411,7 @@ fun ScanningToolsSection(onQuickScan: () -> Unit, onFullScan: () -> Unit) {
                 modifier = Modifier.weight(1f),
                 title = "Quick File Scan",
                 description = "Scan specific files, APKs, or folders instantly.",
-                buttonText = "Choose File",
+                buttonText = "Choose Item",
                 icon = Icons.Default.CreateNewFolder,
                 onButtonClick = onQuickScan,
                 isPrimary = false,
@@ -690,10 +735,18 @@ private fun persistReadPermission(context: Context, uri: Uri) {
 }
 
 private fun resolveDisplayName(context: Context, uri: Uri): String {
-    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        if (nameIndex >= 0 && cursor.moveToFirst()) {
-            return cursor.getString(nameIndex)
+    // Handle Tree URIs differently (Document Tree URIs don't support direct SQL-style queries)
+    if (uri.toString().contains("/tree/")) {
+        val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+        docFile?.name?.let { return it }
+    }
+
+    runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && cursor.moveToFirst()) {
+                return cursor.getString(nameIndex)
+            }
         }
     }
     return uri.lastPathSegment?.substringAfterLast('/') ?: uri.toString()

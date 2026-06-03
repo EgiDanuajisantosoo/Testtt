@@ -98,7 +98,10 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             }
             return
         }
+        scanSpecificFolder(treeUri, "Dataset Folder")
+    }
 
+    fun scanSpecificFolder(treeUri: Uri, displayName: String) {
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -107,7 +110,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     datasetResults = emptyList(),
                     datasetSummary = null,
                     singleScanResult = null,
-                    infoMessage = "Memindai dataset...",
+                    infoMessage = "Memindai folder: $displayName",
                     errorMessage = null,
                 )
             }
@@ -121,7 +124,9 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     },
                     onItemResult = { result ->
                         results += result
-                        _uiState.update { current -> current.copy(datasetResults = results.toList()) }
+                        _uiState.update { current -> 
+                            current.copy(datasetResults = (results.toList() + current.datasetResults).take(10).distinctBy { it.uri }) 
+                        }
                     },
                 )
             }.onSuccess { summary ->
@@ -139,7 +144,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.update {
                     it.copy(
                         isScanning = false,
-                        errorMessage = throwable.message ?: "Gagal memindai dataset",
+                        errorMessage = throwable.message ?: "Gagal memindai folder",
                         infoMessage = null,
                     )
                 }
