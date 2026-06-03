@@ -14,6 +14,7 @@ import com.egidanuajisantoso.test.domain.ScanItemResult
 import com.egidanuajisantoso.test.domain.ScanProgress
 import com.egidanuajisantoso.test.service.FolderMonitorService
 import com.egidanuajisantoso.test.storage.TreeUriStore
+import com.egidanuajisantoso.test.domain.ScanResultBus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,20 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         )
     )
     val uiState: StateFlow<ScannerUiState> = _uiState.asStateFlow()
+
+    init {
+        // Collect background scan results and show them on the dashboard immediately
+        viewModelScope.launch {
+            ScanResultBus.events.collect { result ->
+                _uiState.update { current ->
+                    current.copy(
+                        datasetResults = (listOf(result) + current.datasetResults).take(10).distinctBy { it.uri },
+                        lastCheckedTime = System.currentTimeMillis()
+                    )
+                }
+            }
+        }
+    }
 
     fun onDatasetFolderSelected(uri: Uri, displayName: String) {
         datasetTreeUri = uri

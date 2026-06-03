@@ -76,7 +76,7 @@ fun ScannerScreen(
             if (granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
                 if (startMonitorAfterPermission) {
                     startMonitorAfterPermission = false
-                    viewModel.startMonitor()
+                    requestStorageAndStartMonitor(context, viewModel)
                 }
             }
         },
@@ -153,7 +153,7 @@ fun ScannerScreen(
                                     android.Manifest.permission.POST_NOTIFICATIONS,
                                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                             ) {
-                                viewModel.startMonitor()
+                                requestStorageAndStartMonitor(context, viewModel)
                             } else {
                                 startMonitorAfterPermission = true
                                 notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -726,6 +726,19 @@ private fun formatRelativeTime(timeMillis: Long): String {
         diff < 60000 -> "just now"
         else -> DateUtils.getRelativeTimeSpanString(timeMillis, now, DateUtils.MINUTE_IN_MILLIS).toString()
     }
+}
+
+private fun requestStorageAndStartMonitor(context: Context, viewModel: ScannerViewModel) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        if (!android.os.Environment.isExternalStorageManager()) {
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+            context.startActivity(intent)
+            return
+        }
+    }
+    viewModel.startMonitor()
 }
 
 private fun persistReadPermission(context: Context, uri: Uri) {

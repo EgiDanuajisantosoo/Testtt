@@ -14,11 +14,32 @@ object NotificationHelper {
     const val CHANNEL_ID_ALERT = "malware_alert_channel"
     const val FOREGROUND_NOTIFICATION_ID = 1001
     const val MALWARE_ALERT_NOTIFICATION_ID = 2001
+    const val SCAN_ACTIVITY_NOTIFICATION_ID = 3001
+
+    fun showScanActivityNotification(context: Context, fileName: String, result: ScanItemResult) {
+        ensureChannels(context)
+        val isSafe = result.predicted.label == com.egidanuajisantoso.test.domain.PredictionLabel.SAFE
+        val statusText = if (isSafe) "Bersih (Clean)" else "Ditemukan Ancaman!"
+        
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID_MONITOR)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Pemindaian Real-time")
+            .setContentText("$fileName: $statusText")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setAutoCancel(true)
+            .build()
+
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            runCatching {
+                NotificationManagerCompat.from(context).notify(SCAN_ACTIVITY_NOTIFICATION_ID + fileName.hashCode(), notification)
+            }
+        }
+    }
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-        val manager = context.getSystemService(NotificationManager::class.java)
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
 
         val monitorChannel = NotificationChannel(
             CHANNEL_ID_MONITOR,
@@ -87,5 +108,3 @@ object NotificationHelper {
         }
     }
 }
-
-
