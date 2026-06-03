@@ -88,6 +88,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     fun scanSelectedFile(uri: Uri, displayName: String, pathHint: String? = displayName) {
         viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
             _uiState.update {
                 it.copy(
                     isScanning = true,
@@ -101,6 +102,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             runCatching {
                 repository.scanSingleFile(uri = uri, displayName = displayName, pathHint = pathHint)
             }.onSuccess { result ->
+                val duration = System.currentTimeMillis() - startTime
                 _uiState.update {
                     it.copy(
                         isScanning = false,
@@ -110,7 +112,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         datasetSummary = buildSummaryFromSingle(result),
                         infoMessage = buildResultMessage(result),
                         errorMessage = null,
-                        lastCheckedTime = System.currentTimeMillis()
+                        lastCheckedTime = System.currentTimeMillis(),
+                        lastScanDurationMillis = duration
                     )
                 }
             }.onFailure { throwable ->
@@ -138,6 +141,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     fun scanSpecificFolder(treeUri: Uri, displayName: String) {
         viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
             _uiState.update {
                 it.copy(
                     isScanning = true,
@@ -165,6 +169,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     },
                 )
             }.onSuccess { summary ->
+                val duration = System.currentTimeMillis() - startTime
                 _uiState.update {
                     it.copy(
                         isScanning = false,
@@ -172,7 +177,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         progress = ScanProgress(summary.totalFiles, summary.totalFiles, "Selesai"),
                         infoMessage = buildSummaryMessage(summary),
                         errorMessage = null,
-                        lastCheckedTime = System.currentTimeMillis()
+                        lastCheckedTime = System.currentTimeMillis(),
+                        lastScanDurationMillis = duration
                     )
                 }
             }.onFailure { throwable ->
@@ -272,6 +278,7 @@ data class ScannerUiState(
     val infoMessage: String? = null,
     val errorMessage: String? = null,
     val lastCheckedTime: Long? = null,
+    val lastScanDurationMillis: Long? = null,
 )
 
 enum class ScannerScreenType {

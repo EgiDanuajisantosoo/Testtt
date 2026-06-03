@@ -340,7 +340,11 @@ fun HistoryContent(
         }
 
         item {
-            HistorySummaryStats(scannedCount = state.datasetResults.size, threatCount = foundResults.size)
+            HistorySummaryStats(
+                scannedCount = state.datasetResults.size,
+                threatCount = foundResults.size,
+                durationMillis = state.lastScanDurationMillis
+            )
         }
 
         item {
@@ -550,13 +554,22 @@ fun HistoryItemCard(result: ScanItemResult) {
 }
 
 @Composable
-fun HistorySummaryStats(scannedCount: Int, threatCount: Int) {
+fun HistorySummaryStats(scannedCount: Int, threatCount: Int, durationMillis: Long?) {
+    val timeText = if (durationMillis != null) {
+        val totalSeconds = durationMillis / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        "${minutes}m ${seconds}s"
+    } else {
+        "0m 0s"
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         StatBox(Modifier.weight(1f), "Scanned", String.format("%,d", scannedCount), Icons.Default.Search)
-        StatBox(Modifier.weight(1f), "Time", "4m 32s", Icons.Default.Schedule)
+        StatBox(Modifier.weight(1f), "Time", timeText, Icons.Default.Schedule)
         StatBox(Modifier.weight(1f), "Threats", String.format("%02d", threatCount), Icons.Default.ErrorOutline)
     }
 }
