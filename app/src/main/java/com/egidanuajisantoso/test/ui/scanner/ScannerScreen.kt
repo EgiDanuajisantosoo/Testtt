@@ -7,51 +7,34 @@ import android.os.Build
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.egidanuajisantoso.test.domain.BinaryImagePreprocessor
-import com.egidanuajisantoso.test.domain.OnnxMalwareClassifier
 import com.egidanuajisantoso.test.domain.PredictionLabel
 import com.egidanuajisantoso.test.domain.ScanItemResult
 import com.egidanuajisantoso.test.domain.ScanProgress
 import com.egidanuajisantoso.test.domain.finalLabel
+import com.egidanuajisantoso.test.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,9 +46,6 @@ fun ScannerScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var startMonitorAfterPermission by remember { mutableStateOf(false) }
-    
-    // Diagnostic toggle state
-    var showDiagnostics by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -96,308 +76,589 @@ fun ScannerScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        topBar = { DashboardTopBar() },
+        bottomBar = { DashboardBottomBar() },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        containerColor = DashboardBackground
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+
+            // Device Status Section
             item {
-                Text(
-                    text = "Mobile Shield - Malware Scanner",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "Pemindai lokal offline: scan file manual dan proteksi realtime pada folder unduhan menggunakan model ONNX dari assets.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                DeviceStatusHeader()
+                StatusCard()
             }
 
+            // Real-time Shield Section
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text("Fitur 1 - Scanner", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                filePickerLauncher.launch(arrayOf("*/*"))
-                            }) {
-                                Text("Pilih File")
+                RealTimeShieldCard(
+                    isEnabled = state.monitorStatus.contains("Running", ignoreCase = true),
+                    onToggle = { enabled ->
+                        if (enabled) {
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    android.Manifest.permission.POST_NOTIFICATIONS,
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                viewModel.startMonitor()
+                            } else {
+                                startMonitorAfterPermission = true
+                                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                             }
-                            Button(onClick = { showDiagnostics = !showDiagnostics }) {
-                                Text(if (showDiagnostics) "Hide Diagnostics" else "Diagnostics")
-                            }
+                        } else {
+                            viewModel.stopMonitor()
                         }
                     }
-                }
-            }
-            
-            item {
-                if (showDiagnostics) {
-                    DiagnosticsCard()
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text("Fitur 2 - Background Monitor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("Monitoring berbasis FileObserver bekerja paling baik pada folder yang bisa diakses aplikasi. Default: Downloads.")
-                        OutlinedTextField(
-                            value = state.monitorPath,
-                            onValueChange = viewModel::onMonitorPathChanged,
-                            label = { Text("Path folder yang dipantau") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                                    ContextCompat.checkSelfPermission(
-                                        context,
-                                        android.Manifest.permission.POST_NOTIFICATIONS,
-                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    viewModel.startMonitor()
-                                } else {
-                                    startMonitorAfterPermission = true
-                                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            }) {
-                                Text("Mulai Monitor")
-                            }
-                            OutlinedButton(onClick = viewModel::stopMonitor) {
-                                Text("Hentikan Monitor")
-                            }
-                        }
-                        Text(state.monitorStatus)
-                    }
-                }
-            }
-
-            item {
-                if (state.isScanning) {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Proses pemindaian sedang berjalan...")
-                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                            state.progress?.let { progress ->
-                                Text(progressText(progress))
-                            }
-                        }
-                    }
-                }
-            }
-
-            item {
-                state.infoMessage?.let { info ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    ) {
-                        Text(
-                            text = info,
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
-            }
-
-            item {
-                state.singleScanResult?.let { result ->
-                    ResultSummaryCard(title = "Hasil File Terakhir", result = result)
-                }
-            }
-
-            item {
-                state.datasetSummary?.let { summary ->
-                    SummaryCard(summary = summary)
-                }
-            }
-
-            item {
-                Text("Daftar hasil realtime", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            }
-
-            items(state.datasetResults) { result ->
-                ResultItemCard(result = result)
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun SummaryCard(summary: com.egidanuajisantoso.test.domain.DatasetSummary) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ringkasan Dataset", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("Total file: ${summary.totalFiles}")
-            Text("Aman: ${summary.safeFiles}")
-            Text("Malware: ${summary.malwareFiles}")
-            Text("File berlabel: ${summary.labeledFiles}")
-            Text("Benar: ${summary.correctlyClassified}")
-            Text(summary.accuracyPercent?.let { "Akurasi: ${it.toInt()}%" } ?: "Akurasi: tidak tersedia (dataset tanpa label folder)")
-        }
-    }
-}
-
-@Composable
-private fun ResultSummaryCard(
-    title: String,
-    result: ScanItemResult,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("File: ${result.displayName}")
-            
-            // Display raw logits if available
-            if (result.predicted.rawScores.isNotEmpty()) {
-                Text("Logits: ${formatLogits(result.predicted.rawScores)}", style = MaterialTheme.typography.bodySmall)
-            }
-            
-            // Display probabilities in English format matching ML output
-            Text("Probability benign: ${formatPercent(result.predicted.safeProbability)}")
-            Text("Probability malware: ${formatPercent(result.predicted.malwareProbability)}")
-            
-            // Display prediction in English
-            val finalLabel = result.predicted.finalLabel()
-            val predictionText = when (finalLabel) {
-                PredictionLabel.SAFE -> "benign"
-                PredictionLabel.MALWARE -> "malware"
-            }
-            Text("Prediction: $predictionText", fontWeight = FontWeight.SemiBold)
-            
-            result.expectedLabel?.let { expected ->
-                Text("Ekspektasi: ${expected.displayName()}", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResultItemCard(result: ScanItemResult) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val itemFinalLabel = result.predicted.finalLabel()
-                val predictionText = when (itemFinalLabel) {
-                    PredictionLabel.SAFE -> "benign"
-                    PredictionLabel.MALWARE -> "malware"
-                }
-                AssistChip(
-                    onClick = {},
-                    label = { Text(predictionText) },
                 )
-                result.expectedLabel?.let {
-                    AssistChip(onClick = {}, label = { Text("Expected: ${it.displayName()}") })
+            }
+
+            // Scanning Tools Section
+            item {
+                ScanningToolsSection(
+                    onQuickScan = { filePickerLauncher.launch(arrayOf("*/*")) },
+                    onFullScan = { /* Implement full scan if available */ }
+                )
+            }
+
+            // Recent Activity Section
+            item {
+                RecentActivitySection(results = state.datasetResults)
+            }
+
+            // Existing Scanning Progress
+            if (state.isScanning) {
+                item {
+                    ScanningProgressCard(state.progress)
                 }
             }
-            Text(result.displayName, fontWeight = FontWeight.SemiBold)
-            
-            // Display raw logits if available
-            if (result.predicted.rawScores.isNotEmpty()) {
-                Text("Logits: ${formatLogits(result.predicted.rawScores)}", style = MaterialTheme.typography.bodySmall)
-            }
-            
-            // Display probabilities in ML output format
-            Text("Probability benign: ${formatPercent(result.predicted.safeProbability)}")
-            Text("Probability malware: ${formatPercent(result.predicted.malwareProbability)}")
-            Text("Confidence: ${formatPercent(result.predicted.confidence)}")
-            Text("Source: ${result.sourceHint ?: "-"}")
-            Text(result.isCorrect?.let { if (it) "Matches label" else "Incorrect" } ?: "Label not available")
-        }
-        HorizontalDivider()
-    }
-}
 
-@Composable
-private fun DiagnosticsCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Model Configuration (malware_model_binary.onnx)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            
-            // Output Index Display (fixed now)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("Output Index Malware: ${BinaryImagePreprocessor.outputIndexMalware} (FIXED)", Modifier.weight(1f))
-                Text("✅", style = MaterialTheme.typography.bodySmall)
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                    Text(text = "Made with ❤️ by SafeScan", color = TextGrey, style = MaterialTheme.typography.labelSmall)
+                }
             }
-            
-            // ImageNet Normalization Status (mandatory)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("ImageNet Normalization: ON (MANDATORY)", Modifier.weight(1f))
-                Text("✅", style = MaterialTheme.typography.bodySmall)
-            }
-            
-            Text("mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]", 
-                style = MaterialTheme.typography.labelSmall)
-            
-            // Optional Tuning
-            Text("Optional Tuning:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-            
-            PreprocessingToggle("Use Bitmap Decode (for .png/.jpg)", BinaryImagePreprocessor.useBitmapDecodeForImages) { 
-                BinaryImagePreprocessor.useBitmapDecodeForImages = it 
-            }
-            PreprocessingToggle("Centered Normalization (-1..1)", BinaryImagePreprocessor.useCenteredNormalization) {
-                BinaryImagePreprocessor.useCenteredNormalization = it
-            }
-            PreprocessingToggle("BGR Order", BinaryImagePreprocessor.useBgr) {
-                BinaryImagePreprocessor.useBgr = it
-            }
-            
-            Text("⚠️ Critical settings (output index, ImageNet norm) are FIXED for model accuracy.", 
-                style = MaterialTheme.typography.labelSmall)
+
+            item { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
 }
 
 @Composable
-private fun PreprocessingToggle(label: String, value: Boolean, onValueChange: (Boolean) -> Unit) {
+fun DashboardTopBar() {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .statusBarsPadding()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-        AssistChip(
-            onClick = { onValueChange(!value) },
-            label = { Text(if (value) "ON" else "OFF") },
+        Icon(
+            imageVector = Icons.Default.Menu,
+            contentDescription = "Menu",
+            tint = Color.White
+        )
+        
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(AccentPurple),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = "Logo",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
+        Box(modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.Default.AccountCircle,
+                contentDescription = "Profile",
+                tint = Color.White,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .background(Color.Green, CircleShape)
+                    .align(Alignment.BottomEnd)
+                    .border(1.5.dp, Color.Black, CircleShape)
+            )
+        }
+    }
+}
+
+@Composable
+fun DeviceStatusHeader() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "DEVICE STATUS",
+            color = TextGrey,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Simulate Alert",
+            color = AccentPurple,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
 
-private fun progressText(progress: ScanProgress): String {
-    val percent = if (progress.total <= 0) 0 else ((progress.completed.toFloat() / progress.total.toFloat()) * 100).toInt()
-    return "${progress.completed}/${progress.total} file ($percent%) - ${progress.currentFileName}"
+@Composable
+fun StatusCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = StatusCardBlue)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(140.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 20.dp, y = (-20).dp),
+                tint = Color.White.copy(alpha = 0.05f)
+            )
+
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "SYSTEM SECURE",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Checked 12m ago",
+                            color = Color.White.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Your Device is Protected",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "SafeScan real-time protection is monitoring your system.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
 }
 
-private fun formatPercent(value: Float): String = "${(value * 100f).toInt()}%"
+@Composable
+fun RealTimeShieldCard(isEnabled: Boolean, onToggle: (Boolean) -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.White.copy(alpha = 0.05f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = Color(0xFF4FC3F7),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Real-Time Download Shield",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Monitoring active downloads",
+                    color = TextGrey,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
 
-private fun formatLogits(scores: FloatArray): String {
-    if (scores.isEmpty()) return "[]"
-    val formatted = scores.joinToString(", ") { "%.7g".format(it) }
-    return "[ $formatted ]"
+            Switch(
+                checked = isEnabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = AccentPurple,
+                    uncheckedThumbColor = TextGrey,
+                    uncheckedTrackColor = Color.Black
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun ScanningToolsSection(onQuickScan: () -> Unit, onFullScan: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(20.dp)
+                    .background(AccentPurple, RoundedCornerShape(2.dp))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Scanning Tools",
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            ToolCard(
+                modifier = Modifier.weight(1f),
+                title = "Quick File Scan",
+                description = "Scan specific files, APKs, or folders instantly.",
+                buttonText = "Choose File",
+                icon = Icons.Default.Build,
+                onButtonClick = onQuickScan,
+                isPrimary = false
+            )
+            ToolCard(
+                modifier = Modifier.weight(1f),
+                title = "Full Device Scan",
+                description = "Comprehensive system-wide audit for security.",
+                buttonText = "Start Full Scan",
+                icon = Icons.Default.Search,
+                onButtonClick = onFullScan,
+                isPrimary = true
+            )
+        }
+    }
+}
+
+@Composable
+fun ToolCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    description: String,
+    buttonText: String,
+    icon: ImageVector,
+    onButtonClick: () -> Unit,
+    isPrimary: Boolean
+) {
+    Card(
+        modifier = modifier.height(240.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = AccentPurple,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = description,
+                    color = TextGrey,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 16.sp
+                )
+            }
+
+            Button(
+                onClick = onButtonClick,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isPrimary) AccentPurple else Color.Black
+                ),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(vertical = 10.dp)
+            ) {
+                Text(text = buttonText, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun RecentActivitySection(results: List<ScanItemResult>) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Recent Activity",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = "View All",
+                color = AccentPurple,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (results.isEmpty()) {
+                ActivityItem(
+                    title = "Full Device Scan",
+                    subtitle = "Today, 10:45 AM",
+                    status = "Clean",
+                    isSecure = true
+                )
+                ActivityItem(
+                    title = "Quick Scan: Download.zip",
+                    subtitle = "Yesterday, 04:20 PM",
+                    status = "Threats",
+                    isSecure = false
+                )
+                ActivityItem(
+                    title = "System Background Scan",
+                    subtitle = "2 days ago, 09:12 AM",
+                    status = "Clean",
+                    isSecure = true
+                )
+            } else {
+                results.take(3).forEach { result ->
+                    val isSafe = result.predicted.finalLabel() == PredictionLabel.SAFE
+                    ActivityItem(
+                        title = result.displayName,
+                        subtitle = "Recently",
+                        status = if (isSafe) "Clean" else "Threats",
+                        isSecure = isSafe
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ActivityItem(title: String, subtitle: String, status: String, isSecure: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isSecure) Icons.Default.Check else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (isSecure) Color.White else ThreatRed,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = subtitle,
+                    color = TextGrey,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSecure) Color.White.copy(alpha = 0.05f) else ThreatRed.copy(alpha = 0.1f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = status,
+                    color = if (isSecure) Color.White else ThreatRed,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DashboardBottomBar() {
+    NavigationBar(
+        containerColor = DashboardBackground,
+        tonalElevation = 0.dp,
+        modifier = Modifier.height(80.dp)
+    ) {
+        NavigationBarItem(
+            selected = true,
+            onClick = { },
+            icon = { 
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Home, contentDescription = "Home", modifier = Modifier.size(28.dp))
+                }
+            },
+            label = { Text("Home") },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = AccentPurple,
+                selectedTextColor = AccentPurple,
+                unselectedIconColor = TextGrey,
+                unselectedTextColor = TextGrey,
+                indicatorColor = Color.Transparent
+            )
+        )
+        NavigationBarItem(
+            selected = false,
+            onClick = { },
+            icon = { Icon(Icons.Default.Info, contentDescription = "History", modifier = Modifier.size(28.dp)) },
+            label = { Text("History") },
+            colors = NavigationBarItemDefaults.colors(
+                unselectedIconColor = TextGrey,
+                unselectedTextColor = TextGrey
+            )
+        )
+        NavigationBarItem(
+            selected = false,
+            onClick = { },
+            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(28.dp)) },
+            label = { Text("Settings") },
+            colors = NavigationBarItemDefaults.colors(
+                unselectedIconColor = TextGrey,
+                unselectedTextColor = TextGrey
+            )
+        )
+    }
+}
+
+@Composable
+fun ScanningProgressCard(progress: ScanProgress?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Scanning in progress...", color = Color.White, fontWeight = FontWeight.Bold)
+            LinearProgressIndicator(
+                progress = {
+                    if (progress != null && progress.total > 0) {
+                        progress.completed.toFloat() / progress.total.toFloat()
+                    } else 0f
+                },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                color = AccentPurple,
+                trackColor = Color.White.copy(alpha = 0.1f)
+            )
+            progress?.let {
+                Text(
+                    text = "${it.completed}/${it.total} files - ${it.currentFileName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextGrey
+                )
+            }
+        }
+    }
 }
 
 private fun persistReadPermission(context: Context, uri: Uri) {
