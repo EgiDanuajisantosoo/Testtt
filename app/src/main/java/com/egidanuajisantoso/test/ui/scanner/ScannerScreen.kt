@@ -183,7 +183,6 @@ fun ScannerScreen(
                 )
             }
             ScannerScreenType.SETTINGS -> {
-                // Placeholder for Settings
                 Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Text("Settings Screen", color = Color.White)
                 }
@@ -277,319 +276,141 @@ fun HistoryContent(
     
     val currentList = if (state.historyFilter == HistoryFilter.FOUND) foundResults else cleanResults
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        item {
-            HistoryFilterTabs(
-                selectedFilter = state.historyFilter,
-                foundCount = foundResults.size,
-                onFilterChange = onFilterChange
-            )
-        }
+        Text(
+            text = "Scan History",
+            style = MaterialTheme.typography.headlineSmall,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 16.dp)
+        )
 
-        item {
-            ThreatStatusHeader(threatCount = foundResults.size)
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "DETECTED FILES",
-                    color = TextGrey,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = state.historyFilter == HistoryFilter.FOUND,
+                onClick = { onFilterChange(HistoryFilter.FOUND) },
+                label = { Text("Threats (${foundResults.size})") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = ThreatRed.copy(alpha = 0.2f),
+                    selectedLabelColor = ThreatRed,
+                    labelColor = TextGrey
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = state.historyFilter == HistoryFilter.FOUND,
+                    borderColor = Color.Transparent,
+                    selectedBorderColor = ThreatRed.copy(alpha = 0.5f)
                 )
-                if (foundResults.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(ThreatRed.copy(alpha = 0.1f))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            "ACTION REQUIRED",
-                            color = ThreatRed,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-            }
+            )
+            FilterChip(
+                selected = state.historyFilter == HistoryFilter.CLEAN,
+                onClick = { onFilterChange(HistoryFilter.CLEAN) },
+                label = { Text("Clean (${cleanResults.size})") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color.Green.copy(alpha = 0.1f),
+                    selectedLabelColor = Color.Green,
+                    labelColor = TextGrey
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = state.historyFilter == HistoryFilter.CLEAN,
+                    borderColor = Color.Transparent,
+                    selectedBorderColor = Color.Green.copy(alpha = 0.5f)
+                )
+            )
         }
 
         if (currentList.isEmpty()) {
-            item {
-                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                    Text("No results found", color = TextGrey)
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.History, contentDescription = null, tint = DarkGreyCard, modifier = Modifier.size(64.dp))
+                    Spacer(Modifier.height(16.dp))
+                    Text("No activity recorded", color = TextGrey)
                 }
             }
         } else {
-            items(currentList) { result ->
-                HistoryItemCard(result)
-            }
-        }
-
-        item {
-            HistorySummaryStats(
-                scannedCount = state.datasetResults.size,
-                threatCount = foundResults.size,
-                durationMillis = state.lastScanDurationMillis
-            )
-        }
-
-        item {
-            Button(
-                onClick = { /* Resolve logic */ },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ThreatRed),
-                shape = RoundedCornerShape(16.dp)
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Default.Security, contentDescription = null, tint = Color.Black)
-                Spacer(Modifier.width(8.dp))
-                Text("Resolve All ${foundResults.size} Threats", color = Color.Black, fontWeight = FontWeight.Bold)
+                items(currentList) { result ->
+                    CompactHistoryItem(result)
+                }
+                item { Spacer(Modifier.height(16.dp)) }
             }
         }
-
-        item { Spacer(modifier = Modifier.height(24.dp)) }
     }
 }
 
 @Composable
-fun HistoryFilterTabs(
-    selectedFilter: HistoryFilter,
-    foundCount: Int,
-    onFilterChange: (HistoryFilter) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(DarkGreyCard)
-            .padding(4.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (selectedFilter == HistoryFilter.FOUND) Color.Black else Color.Transparent)
-                .clickable { onFilterChange(HistoryFilter.FOUND) },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                "Found ($foundCount)",
-                color = if (selectedFilter == HistoryFilter.FOUND) Color.White else TextGrey,
-                fontWeight = if (selectedFilter == HistoryFilter.FOUND) FontWeight.Bold else FontWeight.Normal,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (selectedFilter == HistoryFilter.CLEAN) Color.Black else Color.Transparent)
-                .clickable { onFilterChange(HistoryFilter.CLEAN) },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                "Clean",
-                color = if (selectedFilter == HistoryFilter.CLEAN) Color.White else TextGrey,
-                fontWeight = if (selectedFilter == HistoryFilter.CLEAN) FontWeight.Bold else FontWeight.Normal,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
-}
-
-@Composable
-fun ThreatStatusHeader(threatCount: Int) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0A0A)) // Very dark red
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(ThreatRed.copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = ThreatRed,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-            
-            Text(
-                text = "$threatCount Threats Detected",
-                color = ThreatRed,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            
-            Text(
-                text = "We found critical threats that require immediate attention to protect your personal data.",
-                color = TextGrey,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun HistoryItemCard(result: ScanItemResult) {
+fun CompactHistoryItem(result: ScanItemResult) {
     val isMalware = result.predicted.finalLabel() == PredictionLabel.MALWARE
     
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard.copy(alpha = 0.5f)),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isMalware) ThreatRed.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.05f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isMalware) Icons.Default.BugReport else Icons.Default.Description,
-                        contentDescription = null,
-                        tint = if (isMalware) ThreatRed else Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                
-                Spacer(Modifier.width(12.dp))
-                
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = if (isMalware) "malware.${result.displayName.substringAfterLast('.').lowercase()}" else result.displayName,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Spacer(Modifier.weight(1f))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.White.copy(alpha = 0.1f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                result.displayName.substringAfterLast('.').uppercase(),
-                                color = TextGrey,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    Text(
-                        text = result.sourceHint ?: "/storage/emulated/0/...",
-                        color = TextGrey,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1
-                    )
-                }
-            }
-            
-            HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isMalware) Icons.Default.Warning else Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = if (isMalware) ThreatRed else Color.Green,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (isMalware) "HIGH SEVERITY" else "CLEAN",
-                        color = if (isMalware) ThreatRed else Color.Green,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                
-                Row(
-                    modifier = Modifier.clickable { /* Delete logic */ },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Delete", color = ThreatRed, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun HistorySummaryStats(scannedCount: Int, threatCount: Int, durationMillis: Long?) {
-    val timeText = if (durationMillis != null) {
-        val totalSeconds = durationMillis / 1000
-        val minutes = totalSeconds / 60
-        val seconds = totalSeconds % 60
-        "${minutes}m ${seconds}s"
-    } else {
-        "0m 0s"
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        StatBox(Modifier.weight(1f), "Scanned", String.format("%,d", scannedCount), Icons.Default.Search)
-        StatBox(Modifier.weight(1f), "Time", timeText, Icons.Default.Schedule)
-        StatBox(Modifier.weight(1f), "Threats", String.format("%02d", threatCount), Icons.Default.ErrorOutline)
-    }
-}
-
-@Composable
-fun StatBox(modifier: Modifier, label: String, value: String, icon: ImageVector) {
-    Card(
-        modifier = modifier.height(100.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = TextGrey, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.height(8.dp))
-            Text(label, color = TextGrey, style = MaterialTheme.typography.labelSmall)
-            Text(value, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isMalware) ThreatRed.copy(alpha = 0.1f) else AccentPurple.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isMalware) Icons.Default.BugReport else Icons.Default.Description,
+                    contentDescription = null,
+                    tint = if (isMalware) ThreatRed else AccentPurple,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            
+            Spacer(Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = result.displayName,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
+                )
+                Text(
+                    text = "Recently scanned",
+                    color = TextGrey,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isMalware) ThreatRed.copy(alpha = 0.1f) else Color.Green.copy(alpha = 0.1f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (isMalware) "Threat" else "Clean",
+                    color = if (isMalware) ThreatRed else Color.Green,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -661,18 +482,13 @@ fun HistoryTopBar(onBack: () -> Unit) {
         )
         
         Text(
-            "Scan Results",
+            "SafeScan History",
             color = Color.White,
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
 
-        Icon(
-            imageVector = Icons.Default.AccountCircle,
-            contentDescription = "Profile",
-            tint = Color.White,
-            modifier = Modifier.size(32.dp)
-        )
+        Box(modifier = Modifier.size(24.dp))
     }
 }
 
@@ -1208,7 +1024,6 @@ private fun persistReadPermission(context: Context, uri: Uri) {
 }
 
 private fun resolveDisplayName(context: Context, uri: Uri): String {
-    // Handle Tree URIs differently (Document Tree URIs don't support direct SQL-style queries)
     if (uri.toString().contains("/tree/")) {
         val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
         docFile?.name?.let { return it }
