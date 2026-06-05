@@ -10,6 +10,7 @@ import com.egidanuajisantoso.test.domain.ScanItemResult
 import com.egidanuajisantoso.test.domain.ScanProgress
 import com.egidanuajisantoso.test.domain.inferExpectedLabel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 class ScannerRepository(
@@ -104,6 +105,87 @@ class ScannerRepository(
         )
     }
 
+    suspend fun scanFullFileSystem(
+        rootFile: java.io.File,
+        onProgress: (ScanProgress) -> Unit,
+        onItemResult: (ScanItemResult) -> Unit,
+    ): DatasetSummary = withContext(Dispatchers.IO) {
+        // Step 1: Count files quickly to provide a total for the progress bar
+        var totalFilesCount = 0
+        fun countFiles(dir: java.io.File) {
+            val list = dir.listFiles() ?: return
+            for (file in list) {
+                if (file.isDirectory) {
+                    if (!file.name.startsWith(".")) countFiles(file)
+                } else {
+                    totalFilesCount++
+                }
+            }
+        }
+        
+        onProgress(ScanProgress(0, 0, "Menghitung total file..."))
+        countFiles(rootFile)
+        
+        if (totalFilesCount == 0) {
+            // Check if it's a permission issue or actually empty
+            val testList = rootFile.listFiles()
+            if (testList == null) {
+                error("Izin ditolak atau folder tidak dapat diakses: ${rootFile.absolutePath}")
+            }
+            return@withContext DatasetSummary(0, 0, 0, 0, 0)
+        }
+
+        // Step 2: Scan files while walking the tree again
+        var safeFiles = 0
+        var malwareFiles = 0
+        var currentFileIndex = 0
+
+        fun scanRecursive(dir: java.io.File) {
+            val list = dir.listFiles() ?: return
+            for (file in list) {
+                ensureActive()
+                if (file.isDirectory) {
+                    if (!file.name.startsWith(".")) scanRecursive(file)
+                } else {
+                    currentFileIndex++
+                    onProgress(ScanProgress(currentFileIndex, totalFilesCount, file.name))
+                    
+                    val bytes = runCatching { file.readBytes() }.getOrElse { ByteArray(0) }
+                    if (bytes.isNotEmpty()) {
+                        val score = classifier.classify(bytes, file.name)
+                        val result = ScanItemResult(
+                            displayName = file.name,
+                            uri = Uri.fromFile(file),
+                            predicted = score,
+                            sourceHint = file.absolutePath
+                        )
+
+                        if (score.label == PredictionLabel.SAFE) safeFiles++ else malwareFiles++
+                        onItemResult(result)
+                    }
+                }
+            }
+        }
+
+        scanRecursive(rootFile)
+
+        DatasetSummary(totalFilesCount, safeFiles, malwareFiles, 0, 0)
+    }
+
+    private fun collectFilesPhysical(dir: java.io.File, output: MutableList<java.io.File>) {
+        val list = dir.listFiles() ?: return
+        for (file in list) {
+            if (file.isDirectory) {
+                // Skip some system/hidden folders to avoid infinite loops or permission issues
+                if (!file.name.startsWith(".")) {
+                    collectFilesPhysical(file, output)
+                }
+            } else {
+                output.add(file)
+            }
+        }
+    }
+
     private fun collectFiles(
         documentFile: DocumentFile,
         pathHint: String,
@@ -142,5 +224,3 @@ class ScannerRepository(
         val pathHint: String,
     )
 }
-
-

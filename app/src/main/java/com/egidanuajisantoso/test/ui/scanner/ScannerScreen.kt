@@ -189,22 +189,24 @@ fun ScannerScreen(
                 )
             }
             ScannerScreenType.FULL_SCAN -> {
-                val fullScanFolderPicker = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.OpenDocumentTree(),
-                    onResult = { uri ->
-                        if (uri != null) {
-                            persistReadPermission(context, uri)
-                            val name = resolveDisplayName(context, uri)
-                            viewModel.startScanWithFolder(uri, name)
-                        }
-                    }
-                )
-
                 FullScanContent(
                     padding = padding,
                     state = state,
                     onStopClick = { viewModel.stopFullScan() },
-                    onStartClick = { fullScanFolderPicker.launch(null) }
+                    onStartClick = { 
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            if (!android.os.Environment.isExternalStorageManager()) {
+                                val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            } else {
+                                viewModel.performRealFullDeviceScan()
+                            }
+                        } else {
+                            viewModel.performRealFullDeviceScan()
+                        }
+                    }
                 )
             }
             ScannerScreenType.SETTINGS -> {

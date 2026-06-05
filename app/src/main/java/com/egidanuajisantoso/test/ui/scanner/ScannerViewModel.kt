@@ -3,6 +3,7 @@ package com.egidanuajisantoso.test.ui.scanner
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -28,6 +29,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     private val prefs = appContext.getSharedPreferences("scanner_prefs", android.content.Context.MODE_PRIVATE)
 
     private var datasetTreeUri: Uri? = treeUriStore.loadDatasetTreeUri()
+    private var fullScanJob: kotlinx.coroutines.Job? = null
 
     private val _uiState = MutableStateFlow(
         ScannerUiState(
@@ -140,8 +142,15 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun startScanWithFolder(uri: Uri, displayName: String) {
-        onDatasetFolderSelected(uri, displayName)
+    fun performRealFullDeviceScan() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            _uiState.update { it.copy(errorMessage = "Izin 'All Files Access' diperlukan untuk pemindaian penuh.") }
+            return
+        }
+
+        // Target: Seluruh Penyimpanan Internal Perangkat
+        val rootPath = Environment.getExternalStorageDirectory()
+        
         _uiState.update { 
             it.copy(
                 isFullScanning = true, 
@@ -150,15 +159,13 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 fullScanStartTime = System.currentTimeMillis()
             ) 
         }
-        performFullScan(uri)
-    }
 
-    private fun performFullScan(treeUri: Uri) {
-        viewModelScope.launch {
+        fullScanJob?.cancel()
+        fullScanJob = viewModelScope.launch {
             val results = mutableListOf<ScanItemResult>()
             runCatching {
-                repository.scanTree(
-                    treeUri = treeUri,
+                repository.scanFullFileSystem(
+                    rootFile = rootPath,
                     onProgress = { progress ->
                         _uiState.update { current -> current.copy(fullScanProgress = progress) }
                     },
@@ -182,10 +189,11 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
             }.onFailure { throwable ->
+                if (throwable is kotlinx.coroutines.CancellationException) return@launch
                 _uiState.update {
                     it.copy(
                         isFullScanning = false,
-                        errorMessage = throwable.message ?: "Gagal memindai folder"
+                        errorMessage = throwable.message ?: "Gagal memindai perangkat"
                     )
                 }
             }
@@ -193,6 +201,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun stopFullScan() {
+        fullScanJob?.cancel()
+        fullScanJob = null
         _uiState.update { it.copy(currentScreen = ScannerScreenType.DASHBOARD, isFullScanning = false) }
     }
 
