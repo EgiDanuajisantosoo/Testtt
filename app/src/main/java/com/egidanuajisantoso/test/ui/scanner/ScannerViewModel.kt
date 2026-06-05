@@ -128,15 +128,28 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun scanDatasetFolder() {
+    fun startFullDeviceScan() {
+        // Navigasi ke screen Full Scan dulu agar user melihat UI-nya
+        _uiState.update { it.copy(currentScreen = ScannerScreenType.FULL_SCAN) }
+        
         val treeUri = datasetTreeUri
-        if (treeUri == null) {
-            _uiState.update {
-                it.copy(errorMessage = "Pilih folder dataset terlebih dahulu")
-            }
-            return
+        if (treeUri != null) {
+            // Jika folder sudah ada, langsung mulai scan
+            _uiState.update { it.copy(fullScanStartTime = System.currentTimeMillis()) }
+            scanSpecificFolder(treeUri, "Full Device Scan")
         }
-        scanSpecificFolder(treeUri, "Dataset Folder")
+    }
+
+    fun startScanWithFolder(uri: Uri, displayName: String) {
+        onDatasetFolderSelected(uri, displayName)
+        _uiState.update { it.copy(fullScanStartTime = System.currentTimeMillis()) }
+        scanSpecificFolder(uri, "Full Device Scan")
+    }
+
+    fun stopFullScan() {
+        // Since we are using a simple Coroutine job in scanSpecificFolder, 
+        // we might need a way to cancel it. For now, we'll just navigate back.
+        _uiState.update { it.copy(currentScreen = ScannerScreenType.DASHBOARD, isScanning = false) }
     }
 
     fun scanSpecificFolder(treeUri: Uri, displayName: String) {
@@ -279,12 +292,14 @@ data class ScannerUiState(
     val errorMessage: String? = null,
     val lastCheckedTime: Long? = null,
     val lastScanDurationMillis: Long? = null,
+    val fullScanStartTime: Long? = null,
 )
 
 enum class ScannerScreenType {
     DASHBOARD,
     HISTORY,
-    SETTINGS
+    SETTINGS,
+    FULL_SCAN
 }
 
 enum class HistoryFilter {

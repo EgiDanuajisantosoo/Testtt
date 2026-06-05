@@ -147,17 +147,23 @@ fun ScannerScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            if (state.currentScreen == ScannerScreenType.DASHBOARD) {
-                DashboardTopBar()
-            } else if (state.currentScreen == ScannerScreenType.HISTORY) {
-                HistoryTopBar(onBack = { viewModel.navigateTo(ScannerScreenType.DASHBOARD) })
+            when (state.currentScreen) {
+                ScannerScreenType.DASHBOARD -> DashboardTopBar()
+                ScannerScreenType.HISTORY -> HistoryTopBar(onBack = { viewModel.navigateTo(ScannerScreenType.DASHBOARD) })
+                ScannerScreenType.FULL_SCAN -> FullScanTopBar(
+                    onBack = { viewModel.stopFullScan() },
+                    startTime = state.fullScanStartTime
+                )
+                else -> {}
             }
         },
         bottomBar = {
-            DashboardBottomBar(
-                currentScreen = state.currentScreen,
-                onNavigate = { viewModel.navigateTo(it) }
-            )
+            if (state.currentScreen != ScannerScreenType.FULL_SCAN) {
+                DashboardBottomBar(
+                    currentScreen = state.currentScreen,
+                    onNavigate = { viewModel.navigateTo(it) }
+                )
+            }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         containerColor = DashboardBackground
@@ -180,6 +186,25 @@ fun ScannerScreen(
                     padding = padding,
                     state = state,
                     onFilterChange = { viewModel.setHistoryFilter(it) }
+                )
+            }
+            ScannerScreenType.FULL_SCAN -> {
+                val fullScanFolderPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocumentTree(),
+                    onResult = { uri ->
+                        if (uri != null) {
+                            persistReadPermission(context, uri)
+                            val name = resolveDisplayName(context, uri)
+                            viewModel.startScanWithFolder(uri, name)
+                        }
+                    }
+                )
+
+                FullScanContent(
+                    padding = padding,
+                    state = state,
+                    onStopClick = { viewModel.stopFullScan() },
+                    onStartClick = { fullScanFolderPicker.launch(null) }
                 )
             }
             ScannerScreenType.SETTINGS -> {
@@ -245,7 +270,7 @@ fun DashboardContent(
         item {
             ScanningToolsSection(
                 onQuickScan = onQuickScanClick,
-                onFullScan = { viewModel.scanDatasetFolder() }
+                onFullScan = { viewModel.startFullDeviceScan() }
             )
         }
 
@@ -489,6 +514,256 @@ fun HistoryTopBar(onBack: () -> Unit) {
         )
 
         Box(modifier = Modifier.size(24.dp))
+    }
+}
+
+@Composable
+fun FullScanTopBar(onBack: () -> Unit, startTime: Long?) {
+    var ticks by remember { mutableLongStateOf(0L) }
+    
+    LaunchedEffect(startTime) {
+        if (startTime != null) {
+            while (true) {
+                ticks = (System.currentTimeMillis() - startTime) / 1000
+                kotlinx.coroutines.delay(1000)
+            }
+        } else {
+            ticks = 0L
+        }
+    }
+
+    val minutes = ticks / 60
+    val seconds = ticks % 60
+    val timeText = java.util.Locale.getDefault().let { locale ->
+        String.format(locale, "%02d:%02d", minutes, seconds)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Back",
+            tint = Color.White,
+            modifier = Modifier.clickable { onBack() }
+        )
+        
+        Text(
+            "Full Scan",
+            color = Color.White,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        Surface(
+            color = Color.White.copy(alpha = 0.05f),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Schedule, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(timeText, color = AccentPurple, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun FullScanContent(
+    padding: PaddingValues,
+    state: ScannerUiState,
+    onStopClick: () -> Unit,
+    onStartClick: () -> Unit
+) {
+    val progress = state.progress
+    val isScanning = state.isScanning
+    val percent = if (progress != null && progress.total > 0) {
+        (progress.completed.toFloat() / progress.total.toFloat() * 100).toInt()
+    } else 0
+    
+    val threatsFound = state.datasetResults.count { it.predicted.finalLabel() == PredictionLabel.MALWARE }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                if (isScanning) "Analyzing System Files" else "Ready to Scan",
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                if (isScanning) "Scanning root directory and installed packages..." else "Select a directory to begin a deep system audit.",
+                color = TextGrey,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        // Circular Progress
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(280.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(240.dp)
+                    .border(2.dp, Color.White.copy(alpha = 0.05f), CircleShape)
+            )
+            
+            CircularProgressIndicator(
+                progress = { percent / 100f },
+                modifier = Modifier.size(220.dp),
+                color = if (isScanning) AccentPurple else TextGrey.copy(alpha = 0.2f),
+                strokeWidth = 12.dp,
+                trackColor = Color.White.copy(alpha = 0.05f),
+                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+            
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Default.Timeline,
+                    contentDescription = null,
+                    tint = if (isScanning) AccentPurple else TextGrey,
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "$percent%",
+                    color = if (isScanning) Color.White else TextGrey,
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    if (isScanning) "DEEP SCANNING" else "STANDBY",
+                    color = TextGrey,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
+
+        // Current Analysis Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkGreyCard),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(6.dp).background(if (isScanning) AccentPurple else TextGrey, CircleShape))
+                    Spacer(Modifier.width(8.dp))
+                    Text("CURRENT ANALYSIS", color = TextGrey, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    text = progress?.currentFileName ?: if (isScanning) "Initializing..." else "No active scan",
+                    color = if (isScanning) AccentPurple else TextGrey,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        // Stats Boxes
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatBoxSimple(
+                modifier = Modifier.weight(1f),
+                label = "FILES SCANNED",
+                value = String.format(java.util.Locale.getDefault(), "%,d", progress?.completed ?: 0),
+                icon = Icons.Default.Description
+            )
+            StatBoxSimple(
+                modifier = Modifier.weight(1f),
+                label = "THREATS FOUND",
+                value = String.format(java.util.Locale.getDefault(), "%02d", threatsFound),
+                icon = Icons.Default.Warning,
+                valueColor = if (threatsFound > 0) ThreatRed else Color.White
+            )
+        }
+
+        // Overall Progress
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("OVERALL PROGRESS", color = TextGrey, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text("$percent%", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            }
+            LinearProgressIndicator(
+                progress = { percent / 100f },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                color = AccentPurple,
+                trackColor = Color.White.copy(alpha = 0.1f)
+            )
+        }
+
+        // Action Button (Start / Stop)
+        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (isScanning) {
+                Button(
+                    onClick = onStopClick,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336)), 
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.StopCircle, contentDescription = null, tint = Color.Black)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Stop Scan", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            } else {
+                Button(
+                    onClick = onStartClick,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color.Black)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Start Full Scan", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            }
+            
+            Text(
+                if (isScanning) "STOP WILL CANCEL THE CURRENT SESSION. PROGRESS WILL NOT BE SAVED."
+                else "A DEEP SCAN WILL ANALYZE ALL FILES FOR POTENTIAL SECURITY THREATS.",
+                color = TextGrey,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun StatBoxSimple(modifier: Modifier, label: String, value: String, icon: ImageVector, valueColor: Color = Color.White) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = if (valueColor == ThreatRed) ThreatRed else TextGrey, modifier = Modifier.size(20.dp))
+            Text(value, color = valueColor, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(label, color = TextGrey, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
+        }
     }
 }
 
