@@ -584,13 +584,13 @@ fun FullScanContent(
     onStopClick: () -> Unit,
     onStartClick: () -> Unit
 ) {
-    val progress = state.progress
-    val isScanning = state.isScanning
+    val progress = state.fullScanProgress
+    val isScanning = state.isFullScanning
     val percent = if (progress != null && progress.total > 0) {
         (progress.completed.toFloat() / progress.total.toFloat() * 100).toInt()
     } else 0
     
-    val threatsFound = state.datasetResults.count { it.predicted.finalLabel() == PredictionLabel.MALWARE }
+    val threatsFound = state.fullScanResults.count { it.predicted.finalLabel() == PredictionLabel.MALWARE }
 
     Column(
         modifier = Modifier

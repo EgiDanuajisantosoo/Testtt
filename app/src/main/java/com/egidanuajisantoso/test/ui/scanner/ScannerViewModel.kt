@@ -129,41 +129,82 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun startFullDeviceScan() {
-        // Navigasi ke screen Full Scan dulu agar user melihat UI-nya
-        _uiState.update { it.copy(currentScreen = ScannerScreenType.FULL_SCAN) }
-        
-        val treeUri = datasetTreeUri
-        if (treeUri != null) {
-            // Jika folder sudah ada, langsung mulai scan
-            _uiState.update { it.copy(fullScanStartTime = System.currentTimeMillis()) }
-            scanSpecificFolder(treeUri, "Full Device Scan")
+        _uiState.update { 
+            it.copy(
+                currentScreen = ScannerScreenType.FULL_SCAN,
+                isFullScanning = false,
+                fullScanResults = emptyList(),
+                fullScanProgress = null,
+                fullScanStartTime = null
+            ) 
         }
     }
 
     fun startScanWithFolder(uri: Uri, displayName: String) {
         onDatasetFolderSelected(uri, displayName)
-        _uiState.update { it.copy(fullScanStartTime = System.currentTimeMillis()) }
-        scanSpecificFolder(uri, "Full Device Scan")
+        _uiState.update { 
+            it.copy(
+                isFullScanning = true, 
+                fullScanResults = emptyList(),
+                fullScanProgress = null,
+                fullScanStartTime = System.currentTimeMillis()
+            ) 
+        }
+        performFullScan(uri)
+    }
+
+    private fun performFullScan(treeUri: Uri) {
+        viewModelScope.launch {
+            val results = mutableListOf<ScanItemResult>()
+            runCatching {
+                repository.scanTree(
+                    treeUri = treeUri,
+                    onProgress = { progress ->
+                        _uiState.update { current -> current.copy(fullScanProgress = progress) }
+                    },
+                    onItemResult = { result ->
+                        results += result
+                        _uiState.update { current -> 
+                            current.copy(
+                                fullScanResults = results.toList(),
+                                datasetResults = (listOf(result) + current.datasetResults).take(50).distinctBy { it.uri }
+                            ) 
+                        }
+                    },
+                )
+            }.onSuccess { summary ->
+                _uiState.update {
+                    it.copy(
+                        isFullScanning = false,
+                        datasetSummary = summary,
+                        fullScanProgress = ScanProgress(summary.totalFiles, summary.totalFiles, "Selesai"),
+                        lastCheckedTime = System.currentTimeMillis()
+                    )
+                }
+            }.onFailure { throwable ->
+                _uiState.update {
+                    it.copy(
+                        isFullScanning = false,
+                        errorMessage = throwable.message ?: "Gagal memindai folder"
+                    )
+                }
+            }
+        }
     }
 
     fun stopFullScan() {
-        // Since we are using a simple Coroutine job in scanSpecificFolder, 
-        // we might need a way to cancel it. For now, we'll just navigate back.
-        _uiState.update { it.copy(currentScreen = ScannerScreenType.DASHBOARD, isScanning = false) }
+        _uiState.update { it.copy(currentScreen = ScannerScreenType.DASHBOARD, isFullScanning = false) }
     }
 
     fun scanSpecificFolder(treeUri: Uri, displayName: String) {
         viewModelScope.launch {
-            val startTime = System.currentTimeMillis()
             _uiState.update {
                 it.copy(
                     isScanning = true,
                     progress = ScanProgress(0, 0, "Memulai..."),
-                    datasetResults = emptyList(),
-                    datasetSummary = null,
-                    singleScanResult = null,
                     infoMessage = "Memindai folder: $displayName",
                     errorMessage = null,
+                    singleScanResult = null,
                 )
             }
 
@@ -182,7 +223,6 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     },
                 )
             }.onSuccess { summary ->
-                val duration = System.currentTimeMillis() - startTime
                 _uiState.update {
                     it.copy(
                         isScanning = false,
@@ -190,8 +230,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         progress = ScanProgress(summary.totalFiles, summary.totalFiles, "Selesai"),
                         infoMessage = buildSummaryMessage(summary),
                         errorMessage = null,
-                        lastCheckedTime = System.currentTimeMillis(),
-                        lastScanDurationMillis = duration
+                        lastCheckedTime = System.currentTimeMillis()
                     )
                 }
             }.onFailure { throwable ->
@@ -283,10 +322,13 @@ data class ScannerUiState(
     val monitorPath: String = "",
     val monitorStatus: String = "Monitor belum aktif",
     val isMonitorRunning: Boolean = false,
-    val isScanning: Boolean = false,
-    val progress: ScanProgress? = null,
+    val isScanning: Boolean = false, // For Quick Scan
+    val isFullScanning: Boolean = false, // For Full Scan
+    val progress: ScanProgress? = null, // For Quick Scan
+    val fullScanProgress: ScanProgress? = null, // For Full Scan
     val singleScanResult: ScanItemResult? = null,
-    val datasetResults: List<ScanItemResult> = emptyList(),
+    val datasetResults: List<ScanItemResult> = emptyList(), // Global History
+    val fullScanResults: List<ScanItemResult> = emptyList(), // Specific to active Full Scan
     val datasetSummary: DatasetSummary? = null,
     val infoMessage: String? = null,
     val errorMessage: String? = null,
