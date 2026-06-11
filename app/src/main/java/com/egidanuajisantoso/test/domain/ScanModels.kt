@@ -168,13 +168,15 @@ object BinaryImagePreprocessor {
         if (bytes.isEmpty()) {
             grayscale.fill(0f)
         } else if (bytes.size >= pixelCount) {
-            // When there are more bytes than needed, sample uniformly to fill the image
+            // UNIFORM SAMPLING: Ambil byte dengan jarak yang sama di seluruh isi file
+            // Ini sangat penting agar file besar (video) memiliki pola tekstur yang unik bagi model
+            val step = bytes.size.toDouble() / pixelCount.toDouble()
             for (index in 0 until pixelCount) {
-                val sourceIndex = ((index.toLong() * bytes.size) / pixelCount).toInt().coerceIn(0, bytes.lastIndex)
+                val sourceIndex = (index * step).toInt().coerceIn(0, bytes.lastIndex)
                 grayscale[index] = (bytes[sourceIndex].toInt() and 0xFF) / 255f
             }
         } else {
-            // When bytes are fewer, copy then pad with zeros
+            // PADDING: Jika file sangat kecil (seperti file opus pendek), isi sisanya dengan nol
             for (index in 0 until pixelCount) {
                 grayscale[index] = if (index < bytes.size) {
                     (bytes[index].toInt() and 0xFF) / 255f
