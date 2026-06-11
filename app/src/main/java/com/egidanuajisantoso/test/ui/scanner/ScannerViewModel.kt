@@ -142,6 +142,10 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun setTrainingMode(enabled: Boolean) {
+        _uiState.update { it.copy(isTrainingModeEnabled = enabled) }
+    }
+
     fun performRealFullDeviceScan() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
             _uiState.update { it.copy(errorMessage = "Izin 'All Files Access' diperlukan untuk pemindaian penuh.") }
@@ -156,25 +160,35 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 isFullScanning = true, 
                 fullScanResults = emptyList(),
                 fullScanProgress = null,
-                fullScanStartTime = System.currentTimeMillis()
+                fullScanStartTime = System.currentTimeMillis(),
+                featuresCollectedForTraining = 0
             ) 
         }
 
         fullScanJob?.cancel()
         fullScanJob = viewModelScope.launch {
             val results = mutableListOf<ScanItemResult>()
+            var collectedFeatures = 0
             runCatching {
                 repository.scanFullFileSystem(
                     rootFile = rootPath,
+                    isTrainingMode = _uiState.value.isTrainingModeEnabled,
                     onProgress = { progress ->
                         _uiState.update { current -> current.copy(fullScanProgress = progress) }
                     },
                     onItemResult = { result ->
                         results += result
+                        
+                        // Dalam mode training pertama ini, semua file dikoleksi fiturnya
+                        if (_uiState.value.isTrainingModeEnabled) {
+                            collectedFeatures++
+                        }
+
                         _uiState.update { current -> 
                             current.copy(
                                 fullScanResults = results.toList(),
-                                datasetResults = (listOf(result) + current.datasetResults).take(50).distinctBy { it.uri }
+                                datasetResults = (listOf(result) + current.datasetResults).take(50).distinctBy { it.uri },
+                                featuresCollectedForTraining = collectedFeatures
                             ) 
                         }
                     },
@@ -185,7 +199,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         isFullScanning = false,
                         datasetSummary = summary,
                         fullScanProgress = ScanProgress(summary.totalFiles, summary.totalFiles, "Selesai"),
-                        lastCheckedTime = System.currentTimeMillis()
+                        lastCheckedTime = System.currentTimeMillis(),
+                        infoMessage = if (it.isTrainingModeEnabled) "Pelatihan selesai: $collectedFeatures fitur siap dikirim ke server." else null
                     )
                 }
             }.onFailure { throwable ->
@@ -295,6 +310,19 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun getTrainingFilesCount(): Int {
+        val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+        val trainingDir = java.io.File(publicDir, "SafeScan_Dataset")
+        return trainingDir.listFiles()?.size ?: 0
+    }
+
+    fun clearDataset() {
+        val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+        val trainingDir = java.io.File(publicDir, "SafeScan_Dataset")
+        trainingDir.deleteRecursively()
+        _uiState.update { it.copy(featuresCollectedForTraining = 0) }
+    }
+
     private fun defaultMonitorPath(): String {
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         return downloads.absolutePath
@@ -328,6 +356,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 data class ScannerUiState(
     val currentScreen: ScannerScreenType = ScannerScreenType.DASHBOARD,
     val historyFilter: HistoryFilter = HistoryFilter.FOUND,
+    val isTrainingModeEnabled: Boolean = false,
     val datasetFolderLabel: String = "Belum ada folder dataset",
     val monitorPath: String = "",
     val monitorStatus: String = "Monitor belum aktif",
@@ -345,6 +374,7 @@ data class ScannerUiState(
     val lastCheckedTime: Long? = null,
     val lastScanDurationMillis: Long? = null,
     val fullScanStartTime: Long? = null,
+    val featuresCollectedForTraining: Int = 0,
 )
 
 enum class ScannerScreenType {

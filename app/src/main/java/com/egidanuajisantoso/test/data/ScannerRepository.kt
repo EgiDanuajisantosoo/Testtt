@@ -107,12 +107,16 @@ class ScannerRepository(
 
     suspend fun scanFullFileSystem(
         rootFile: java.io.File,
+        isTrainingMode: Boolean,
         onProgress: (ScanProgress) -> Unit,
         onItemResult: (ScanItemResult) -> Unit,
     ): DatasetSummary = withContext(Dispatchers.IO) {
-        // Step 1: Count files quickly to provide a total for the progress bar
+        // Step 1: Count files quickly
         var totalFilesCount = 0
         fun countFiles(dir: java.io.File) {
+            // Jangan hitung file di dalam folder dataset aplikasi sendiri untuk mencegah loop
+            if (dir.name == "SafeScan_Dataset") return
+            
             val list = dir.listFiles() ?: return
             for (file in list) {
                 if (file.isDirectory) {
@@ -126,21 +130,17 @@ class ScannerRepository(
         onProgress(ScanProgress(0, 0, "Menghitung total file..."))
         countFiles(rootFile)
         
-        if (totalFilesCount == 0) {
-            // Check if it's a permission issue or actually empty
-            val testList = rootFile.listFiles()
-            if (testList == null) {
-                error("Izin ditolak atau folder tidak dapat diakses: ${rootFile.absolutePath}")
-            }
-            return@withContext DatasetSummary(0, 0, 0, 0, 0)
-        }
+        if (totalFilesCount == 0) return@withContext DatasetSummary(0, 0, 0, 0, 0)
 
-        // Step 2: Scan files while walking the tree again
+        // Step 2: Scan and Extract
         var safeFiles = 0
         var malwareFiles = 0
         var currentFileIndex = 0
 
         fun scanRecursive(dir: java.io.File) {
+            // Jangan pindai folder dataset aplikasi sendiri
+            if (dir.name == "SafeScan_Dataset") return
+
             val list = dir.listFiles() ?: return
             for (file in list) {
                 ensureActive()
@@ -148,7 +148,9 @@ class ScannerRepository(
                     if (!file.name.startsWith(".")) scanRecursive(file)
                 } else {
                     currentFileIndex++
-                    onProgress(ScanProgress(currentFileIndex, totalFilesCount, file.name))
+                    // Pastikan currentFileIndex tidak melebihi total agar UI tetap di 100%
+                    val displayIndex = if (currentFileIndex > totalFilesCount) totalFilesCount else currentFileIndex
+                    onProgress(ScanProgress(displayIndex, totalFilesCount, file.name))
                     
                     val bytes = runCatching { file.readBytes() }.getOrElse { ByteArray(0) }
                     if (bytes.isNotEmpty()) {
@@ -160,7 +162,17 @@ class ScannerRepository(
                             sourceHint = file.absolutePath
                         )
 
-                        if (score.label == PredictionLabel.SAFE) safeFiles++ else malwareFiles++
+                        // Jika Training Mode Aktif: Ambil SEMUA file sebagai dataset BENIGN (Aman)
+                        // Ini dilakukan karena user menjamin perangkatnya bersih dari malware
+                        if (isTrainingMode) {
+                            saveFeatureToCache(file.name, bytes)
+                        }
+
+                        if (score.label == PredictionLabel.SAFE) {
+                            safeFiles++
+                        } else {
+                            malwareFiles++
+                        }
                         onItemResult(result)
                     }
                 }
@@ -168,8 +180,21 @@ class ScannerRepository(
         }
 
         scanRecursive(rootFile)
-
         DatasetSummary(totalFilesCount, safeFiles, malwareFiles, 0, 0)
+    }
+
+    private fun saveFeatureToCache(fileName: String, bytes: ByteArray) {
+        runCatching {
+            // Simpan di folder Documents agar bisa diakses user dengan mudah
+            val publicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
+            val trainingDir = java.io.File(publicDir, "SafeScan_Dataset")
+            
+            if (!trainingDir.exists()) trainingDir.mkdirs()
+            
+            // Simpan biner file (fitur) dengan nama unik
+            val featureFile = java.io.File(trainingDir, "${fileName.hashCode()}_${System.currentTimeMillis()}.bin")
+            featureFile.writeBytes(bytes)
+        }
     }
 
     private fun collectFilesPhysical(dir: java.io.File, output: MutableList<java.io.File>) {
