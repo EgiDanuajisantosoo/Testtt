@@ -23,7 +23,11 @@ data class ClassificationScore(
     val rawScores: FloatArray,
 )
 
-const val MALWARE_DECISION_THRESHOLD = 0.5f
+/**
+ * Threshold untuk menentukan apakah sebuah file adalah malware.
+ * Ditingkatkan ke 0.8f (80%) untuk mengurangi false positive pada file media terkompresi (WhatsApp/Opus).
+ */
+const val MALWARE_DECISION_THRESHOLD = 0.8f
 
 fun ClassificationScore.finalLabel(): PredictionLabel =
     if (malwareProbability >= MALWARE_DECISION_THRESHOLD) PredictionLabel.MALWARE else PredictionLabel.SAFE
@@ -69,7 +73,7 @@ object BinaryImagePreprocessor {
     var useCenteredNormalization: Boolean = false // false => 0..1, true => -1..1
 
     @Volatile
-    var useBgr: Boolean = true // REQUIRED for model accuracy with certain malware-to-image conversions
+    var useBgr: Boolean = false // REQUIRED for model accuracy with certain malware-to-image conversions
 
     /**
      * CRITICAL: ImageNet normalization is REQUIRED for malware_model_binary.onnx.
@@ -79,7 +83,8 @@ object BinaryImagePreprocessor {
     @Volatile
     var useImageNetNormalization: Boolean = true // ALWAYS true for this model
 
-    // If true, decode image files as RGB bitmaps before tensor conversion.
+    // FIXED: Always use raw byte sampling for all files to match model training.
+    // Decoding images as bitmaps changes the "binary texture" and causes false positives.
     @Volatile
     var useBitmapDecodeForImages: Boolean = true
     
