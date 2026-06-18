@@ -40,6 +40,7 @@ import com.egidanuajisantoso.test.domain.ScanItemResult
 import com.egidanuajisantoso.test.domain.ScanProgress
 import com.egidanuajisantoso.test.domain.finalLabel
 import com.egidanuajisantoso.test.ui.theme.*
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,13 +153,15 @@ fun ScannerScreen(
                 ScannerScreenType.HISTORY -> HistoryTopBar(onBack = { viewModel.navigateTo(ScannerScreenType.DASHBOARD) })
                 ScannerScreenType.FULL_SCAN -> FullScanTopBar(
                     onBack = { viewModel.stopFullScan() },
-                    startTime = state.fullScanStartTime
+                    startTime = state.fullScanStartTime,
+                    isScanning = state.isFullScanning
                 )
+                ScannerScreenType.SCAN_RESULTS -> ScanResultsTopBar(onBack = { viewModel.navigateTo(ScannerScreenType.DASHBOARD) })
                 else -> {}
             }
         },
         bottomBar = {
-            if (state.currentScreen != ScannerScreenType.FULL_SCAN) {
+            if (state.currentScreen != ScannerScreenType.FULL_SCAN && state.currentScreen != ScannerScreenType.SCAN_RESULTS) {
                 DashboardBottomBar(
                     currentScreen = state.currentScreen,
                     onNavigate = { viewModel.navigateTo(it) }
@@ -209,12 +212,349 @@ fun ScannerScreen(
                     }
                 )
             }
+            ScannerScreenType.SCAN_RESULTS -> {
+                ScanResultsContent(
+                    padding = padding,
+                    state = state,
+                    onDeleteThreat = { viewModel.deleteFile(it) },
+                    onResolveAll = { viewModel.resolveAllThreats() },
+                    onFilterChange = { viewModel.setHistoryFilter(it) }
+                )
+            }
             ScannerScreenType.SETTINGS -> {
                 Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Text("Settings Screen", color = Color.White)
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ScanResultsContent(
+    padding: PaddingValues,
+    state: ScannerUiState,
+    onDeleteThreat: (ScanItemResult) -> Unit,
+    onResolveAll: () -> Unit,
+    onFilterChange: (HistoryFilter) -> Unit
+) {
+    val threats = state.fullScanResults.filter { it.predicted.finalLabel() == PredictionLabel.MALWARE }
+    val clean = state.fullScanResults.filter { it.predicted.finalLabel() == PredictionLabel.SAFE }
+    val currentList = if (state.historyFilter == HistoryFilter.FOUND) threats else clean
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(horizontal = 16.dp)
+    ) {
+        // Tabs
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            TabItem(
+                modifier = Modifier.weight(1f),
+                label = "Found (${threats.size})",
+                selected = state.historyFilter == HistoryFilter.FOUND,
+                onClick = { onFilterChange(HistoryFilter.FOUND) }
+            )
+            TabItem(
+                modifier = Modifier.weight(1f),
+                label = "Clean",
+                selected = state.historyFilter == HistoryFilter.CLEAN,
+                onClick = { onFilterChange(HistoryFilter.CLEAN) }
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            if (state.historyFilter == HistoryFilter.FOUND && threats.isNotEmpty()) {
+                item {
+                    ThreatSummaryBanner(count = threats.size)
+                }
+                
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("DETECTED FILES", color = TextGrey, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Surface(
+                            color = ThreatRed.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "ACTION REQUIRED",
+                                color = ThreatRed,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                items(threats) { result ->
+                    ThreatItem(result = result, onDelete = { onDeleteThreat(result) })
+                }
+            } else if (state.historyFilter == HistoryFilter.CLEAN) {
+                items(clean) { result ->
+                    CompactHistoryItem(result)
+                }
+            } else if (threats.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Shield, contentDescription = null, tint = Color.Green, modifier = Modifier.size(64.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("No threats detected", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Your device is secure", color = TextGrey)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                FullScanSummaryStats(
+                    totalScanned = state.fullScanProgress?.total ?: 0,
+                    durationMillis = state.finalScanDurationMillis ?: 0L,
+                    threatsFound = threats.size
+                )
+            }
+            
+            item { Spacer(Modifier.height(100.dp)) }
+        }
+    }
+
+    if (state.historyFilter == HistoryFilter.FOUND && threats.isNotEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 16.dp, start = 16.dp, end = 16.dp),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Button(
+                onClick = onResolveAll,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ThreatRed),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Default.Shield, contentDescription = null, tint = Color.White)
+                Spacer(Modifier.width(8.dp))
+                Text("Resolve All ${threats.size} Threats", fontWeight = FontWeight.Bold, color = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+fun TabItem(modifier: Modifier, label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) DarkGreyCard else Color.Transparent)
+            .clickable { onClick() }
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (selected) Color.White else TextGrey,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+@Composable
+fun ThreatSummaryBanner(count: Int) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = ThreatRed.copy(alpha = 0.05f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ThreatRed.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(ThreatRed.copy(alpha = 0.1f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Shield, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(32.dp))
+            }
+            
+            Text(
+                "$count Threats Detected",
+                style = MaterialTheme.typography.headlineSmall,
+                color = ThreatRed,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Text(
+                "We found critical threats that require immediate attention to protect your personal data.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextGrey,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun ThreatItem(result: ScanItemResult, onDelete: () -> Unit) {
+    val extension = result.displayName.substringAfterLast('.', "").uppercase()
+    val severity = when {
+        result.predicted.confidence > 0.95 -> "HIGH SEVERITY"
+        result.predicted.confidence > 0.85 -> "MEDIUM SEVERITY"
+        else -> "LOW SEVERITY"
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Description, contentDescription = null, tint = ThreatRed)
+                }
+                
+                Spacer(Modifier.width(12.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = result.predicted.label.name.lowercase().replaceFirstChar { it.uppercase() } + ".virus",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        if (extension.isNotEmpty()) {
+                            Surface(color = Color.White.copy(alpha = 0.1f), shape = RoundedCornerShape(4.dp)) {
+                                Text(extension, color = TextGrey, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Text(
+                        text = result.sourceHint ?: "Unknown Path",
+                        color = TextGrey,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(severity, color = ThreatRed, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onDelete() }
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Delete", color = ThreatRed, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FullScanSummaryStats(totalScanned: Int, durationMillis: Long, threatsFound: Int) {
+    val durationText = if (durationMillis > 0) {
+        val minutes = (durationMillis / 1000) / 60
+        val seconds = (durationMillis / 1000) % 60
+        "${minutes}m ${seconds}s"
+    } else "0s"
+
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatBoxMini(modifier = Modifier.weight(1f), label = "Scanned", value = String.format(Locale.getDefault(), "%,d", totalScanned), icon = Icons.Default.Search)
+        StatBoxMini(modifier = Modifier.weight(1f), label = "Time", value = durationText, icon = Icons.Default.Schedule)
+        StatBoxMini(modifier = Modifier.weight(1f), label = "Threats", value = String.format(Locale.getDefault(), "%02d", threatsFound), icon = Icons.Default.Shield)
+    }
+}
+
+@Composable
+fun StatBoxMini(modifier: Modifier, label: String, value: String, icon: ImageVector) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkGreyCard.copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = TextGrey, modifier = Modifier.size(16.dp))
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+            Text(label, color = TextGrey, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+fun ScanResultsTopBar(onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Back",
+            tint = Color.White,
+            modifier = Modifier.clickable { onBack() }
+        )
+        
+        Text(
+            "Scan Results",
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Icon(
+            imageVector = Icons.Default.AccountCircle,
+            contentDescription = "Profile",
+            tint = Color.White
+        )
     }
 }
 
@@ -520,15 +860,18 @@ fun HistoryTopBar(onBack: () -> Unit) {
 }
 
 @Composable
-fun FullScanTopBar(onBack: () -> Unit, startTime: Long?) {
+fun FullScanTopBar(onBack: () -> Unit, startTime: Long?, isScanning: Boolean) {
     var ticks by remember { mutableLongStateOf(0L) }
     
-    LaunchedEffect(startTime) {
-        if (startTime != null) {
+    LaunchedEffect(startTime, isScanning) {
+        if (startTime != null && isScanning) {
             while (true) {
                 ticks = (System.currentTimeMillis() - startTime) / 1000
                 kotlinx.coroutines.delay(1000)
             }
+        } else if (startTime != null && !isScanning) {
+            // Keep the last tick count when finished/stopped
+            ticks = (System.currentTimeMillis() - startTime) / 1000
         } else {
             ticks = 0L
         }
@@ -536,9 +879,7 @@ fun FullScanTopBar(onBack: () -> Unit, startTime: Long?) {
 
     val minutes = ticks / 60
     val seconds = ticks % 60
-    val timeText = java.util.Locale.getDefault().let { locale ->
-        String.format(locale, "%02d:%02d", minutes, seconds)
-    }
+    val timeText = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
 
     Row(
         modifier = Modifier
@@ -686,13 +1027,13 @@ fun FullScanContent(
             StatBoxSimple(
                 modifier = Modifier.weight(1f),
                 label = "FILES SCANNED",
-                value = String.format(java.util.Locale.getDefault(), "%,d", progress?.completed ?: 0),
+                value = String.format(Locale.getDefault(), "%,d", progress?.completed ?: 0),
                 icon = Icons.Default.Description
             )
             StatBoxSimple(
                 modifier = Modifier.weight(1f),
                 label = "THREATS FOUND",
-                value = String.format(java.util.Locale.getDefault(), "%02d", threatsFound),
+                value = String.format(Locale.getDefault(), "%02d", threatsFound),
                 icon = Icons.Default.Warning,
                 valueColor = if (threatsFound > 0) ThreatRed else Color.White
             )

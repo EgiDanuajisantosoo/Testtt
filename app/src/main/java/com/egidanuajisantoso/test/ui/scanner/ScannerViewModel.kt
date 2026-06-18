@@ -9,15 +9,18 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.egidanuajisantoso.test.data.ScannerRepository
+import com.egidanuajisantoso.test.domain.PredictionLabel
 import com.egidanuajisantoso.test.domain.ScanItemResult
 import com.egidanuajisantoso.test.domain.ScanProgress
 import com.egidanuajisantoso.test.domain.ScanResultBus
+import com.egidanuajisantoso.test.domain.finalLabel
 import com.egidanuajisantoso.test.service.FolderMonitorService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 class ScannerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ScannerRepository(application.applicationContext)
@@ -161,7 +164,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 isFullScanning = false,
                 fullScanResults = emptyList(),
                 fullScanProgress = null,
-                fullScanStartTime = null
+                fullScanStartTime = null,
+                finalScanDurationMillis = null
             ) 
         }
     }
@@ -173,13 +177,15 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         }
 
         val rootPath = Environment.getExternalStorageDirectory()
+        val startTime = System.currentTimeMillis()
         
         _uiState.update { 
             it.copy(
                 isFullScanning = true, 
                 fullScanResults = emptyList(),
                 fullScanProgress = null,
-                fullScanStartTime = System.currentTimeMillis()
+                fullScanStartTime = startTime,
+                finalScanDurationMillis = null
             ) 
         }
 
@@ -205,12 +211,14 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     },
                 )
             }.onSuccess { summary ->
+                val duration = System.currentTimeMillis() - startTime
                 _uiState.update {
                     it.copy(
                         isFullScanning = false,
                         fullScanProgress = ScanProgress(summary.totalFiles, summary.totalFiles, "Complete"),
                         lastCheckedTime = System.currentTimeMillis(),
-                        infoMessage = "Full scan complete."
+                        finalScanDurationMillis = duration,
+                        currentScreen = ScannerScreenType.SCAN_RESULTS
                     )
                 }
             }.onFailure { throwable ->
@@ -228,7 +236,56 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     fun stopFullScan() {
         fullScanJob?.cancel()
         fullScanJob = null
-        _uiState.update { it.copy(currentScreen = ScannerScreenType.DASHBOARD, isFullScanning = false) }
+        _uiState.update { it.copy(currentScreen = ScannerScreenType.DASHBOARD, isFullScanning = false, fullScanStartTime = null) }
+    }
+
+    fun deleteFile(result: ScanItemResult) {
+        val path = result.uri.path ?: return
+        val file = File(path)
+        if (file.exists()) {
+            val deleted = file.delete()
+            if (deleted) {
+                _uiState.update { current ->
+                    current.copy(
+                        fullScanResults = current.fullScanResults.filter { it.uri != result.uri },
+                        historyResults = current.historyResults.filter { it.uri != result.uri },
+                        infoMessage = "File deleted: ${result.displayName}"
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(errorMessage = "Failed to delete: ${result.displayName}") }
+            }
+        } else {
+            // If file doesn't exist, just remove from list
+            _uiState.update { current ->
+                current.copy(
+                    fullScanResults = current.fullScanResults.filter { it.uri != result.uri },
+                    historyResults = current.historyResults.filter { it.uri != result.uri }
+                )
+            }
+        }
+    }
+
+    fun resolveAllThreats() {
+        val threats = _uiState.value.fullScanResults.filter { it.predicted.finalLabel() == PredictionLabel.MALWARE }
+        viewModelScope.launch {
+            var deletedCount = 0
+            threats.forEach { result ->
+                val path = result.uri.path ?: return@forEach
+                if (File(path).delete()) {
+                    deletedCount++
+                }
+            }
+            _uiState.update { current ->
+                current.copy(
+                    fullScanResults = current.fullScanResults.filter { it.predicted.finalLabel() != PredictionLabel.MALWARE },
+                    historyResults = current.historyResults.filter { result ->
+                        threats.none { it.uri == result.uri }
+                    },
+                    infoMessage = "$deletedCount threats resolved."
+                )
+            }
+        }
     }
 
     fun startMonitor() {
@@ -297,13 +354,15 @@ data class ScannerUiState(
     val lastCheckedTime: Long? = null,
     val lastScanDurationMillis: Long? = null,
     val fullScanStartTime: Long? = null,
+    val finalScanDurationMillis: Long? = null,
 )
 
 enum class ScannerScreenType {
     DASHBOARD,
     HISTORY,
     SETTINGS,
-    FULL_SCAN
+    FULL_SCAN,
+    SCAN_RESULTS
 }
 
 enum class HistoryFilter {
