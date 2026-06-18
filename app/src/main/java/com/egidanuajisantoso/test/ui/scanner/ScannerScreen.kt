@@ -115,7 +115,7 @@ fun ScannerScreen(
         AlertDialog(
             onDismissRequest = { showQuickScanOptions = false },
             title = { Text("Quick Scan", fontWeight = FontWeight.Bold) },
-            text = { Text("Pilih sumber yang ingin Anda pindai secara instan.") },
+            text = { Text("Choose a file or folder to scan instantly.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -124,7 +124,7 @@ fun ScannerScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
                 ) {
-                    Text("Pilih File", color = Color.Black)
+                    Text("Select File", color = Color.Black)
                 }
             },
             dismissButton = {
@@ -135,7 +135,7 @@ fun ScannerScreen(
                     },
                     border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple)
                 ) {
-                    Text("Pilih Folder", color = AccentPurple)
+                    Text("Select Folder", color = AccentPurple)
                 }
             },
             containerColor = DarkGreyCard,
@@ -278,7 +278,7 @@ fun DashboardContent(
 
         // Recent Activity Section
         item {
-            RecentActivitySection(results = state.datasetResults, onViewAll = onViewAllClick)
+            RecentActivitySection(results = state.historyResults, onViewAll = onViewAllClick)
         }
 
         // Existing Scanning Progress
@@ -298,8 +298,8 @@ fun HistoryContent(
     state: ScannerUiState,
     onFilterChange: (HistoryFilter) -> Unit
 ) {
-    val foundResults = state.datasetResults.filter { it.predicted.finalLabel() == PredictionLabel.MALWARE }
-    val cleanResults = state.datasetResults.filter { it.predicted.finalLabel() == PredictionLabel.SAFE }
+    val foundResults = state.historyResults.filter { it.predicted.finalLabel() == PredictionLabel.MALWARE }
+    val cleanResults = state.historyResults.filter { it.predicted.finalLabel() == PredictionLabel.SAFE }
     
     val currentList = if (state.historyFilter == HistoryFilter.FOUND) foundResults else cleanResults
 
@@ -610,7 +610,7 @@ fun FullScanContent(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                if (isScanning) "Scanning root directory and installed packages..." else "Select a directory to begin a deep system audit.",
+                if (isScanning) "Scanning root directory and installed packages..." else "Begin a deep system audit to ensure device safety.",
                 color = TextGrey,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center
@@ -781,12 +781,6 @@ fun DeviceStatusHeader() {
             color = TextGrey,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Simulate Alert",
-            color = AccentPurple,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold
         )
     }
 }

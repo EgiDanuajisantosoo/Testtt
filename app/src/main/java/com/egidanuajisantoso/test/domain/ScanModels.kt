@@ -10,7 +10,7 @@ enum class PredictionLabel {
     MALWARE;
 
     fun displayName(): String = when (this) {
-        SAFE -> "Aman"
+        SAFE -> "Safe"
         MALWARE -> "Malware"
     }
 }
@@ -24,8 +24,8 @@ data class ClassificationScore(
 )
 
 /**
- * Threshold untuk menentukan apakah sebuah file adalah malware.
- * Ditingkatkan ke 0.8f (80%) untuk mengurangi false positive pada file media terkompresi (WhatsApp/Opus).
+ * Threshold for determining malware.
+ * 0.8f (80%) to reduce false positives.
  */
 const val MALWARE_DECISION_THRESHOLD = 0.8f
 
@@ -36,8 +36,6 @@ data class ScanItemResult(
     val displayName: String,
     val uri: Uri,
     val predicted: ClassificationScore,
-    val expectedLabel: PredictionLabel? = null,
-    val isCorrect: Boolean? = null,
     val sourceHint: String? = null,
 )
 
@@ -51,12 +49,9 @@ data class DatasetSummary(
     val totalFiles: Int,
     val safeFiles: Int,
     val malwareFiles: Int,
-    val labeledFiles: Int,
-    val correctlyClassified: Int,
-) {
-    val accuracyPercent: Float?
-        get() = if (labeledFiles == 0) null else correctlyClassified.toFloat() / labeledFiles.toFloat() * 100f
-}
+    val labeledFiles: Int = 0,
+    val correctlyClassified: Int = 0,
+)
 
 data class BinaryImageTensor(
     val inputShape: LongArray,
@@ -68,49 +63,21 @@ object BinaryImagePreprocessor {
     const val DEFAULT_HEIGHT = 224
     private const val CHANNELS = 3
 
-    // Toggles used by UI for quick tuning.
     @Volatile
-    var useCenteredNormalization: Boolean = false // false => 0..1, true => -1..1
+    var useCenteredNormalization: Boolean = false 
 
     @Volatile
-    var useBgr: Boolean = false // REQUIRED for model accuracy with certain malware-to-image conversions
+    var useBgr: Boolean = false 
 
-    /**
-     * CRITICAL: ImageNet normalization is REQUIRED for malware_model_binary.onnx.
-     * Model was trained with mean=[0.485, 0.456, 0.406] and std=[0.229, 0.224, 0.225].
-     * This is NOT optional - it must always be applied before inference.
-     */
     @Volatile
-    var useImageNetNormalization: Boolean = true // ALWAYS true for this model
+    var useImageNetNormalization: Boolean = true 
 
-    // FIXED: Always use raw byte sampling for all files to match model training.
-    // Decoding images as bitmaps changes the "binary texture" and causes false positives.
     @Volatile
     var useBitmapDecodeForImages: Boolean = true
     
-    /**
-     * Output index mapping based on model architecture.
-     * For malware_model_binary.onnx:
-     * Index 0 = benign (SAFE)
-     * Index 1 = malware (DANGEROUS)
-     * Therefore, outputIndexMalware must be 1 to correctly read malware probability
-     */
     @Volatile
-    var outputIndexMalware: Int = 1 // FIXED: Must be 1 for this model
+    var outputIndexMalware: Int = 1 
     
-    fun toggleOutputIndex() {
-        outputIndexMalware = if (outputIndexMalware == 0) 1 else 0
-    }
-
-    /**
-     * Convert raw file bytes into a tensor expected by the ONNX model.
-     * Pipeline (as in README/flowchart):
-     *  - read bytes
-     *  - convert to 2D grayscale matrix by sampling/padding
-     *  - (implicit) resize to target resolution by sampling logic below
-     *  - replicate into RGB channels (or BGR if toggled)
-     *  - normalize according to flags
-     */
     fun toTensor(
         bytes: ByteArray,
         width: Int = DEFAULT_WIDTH,
@@ -166,22 +133,17 @@ object BinaryImagePreprocessor {
         }
 
         val pixelCount = width * height
-
-        // Build grayscale values by sampling the byte array into [0..255], then scale to 0..1
         val grayscale = FloatArray(pixelCount)
 
         if (bytes.isEmpty()) {
             grayscale.fill(0f)
         } else if (bytes.size >= pixelCount) {
-            // UNIFORM SAMPLING: Ambil byte dengan jarak yang sama di seluruh isi file
-            // Ini sangat penting agar file besar (video) memiliki pola tekstur yang unik bagi model
             val step = bytes.size.toDouble() / pixelCount.toDouble()
             for (index in 0 until pixelCount) {
                 val sourceIndex = (index * step).toInt().coerceIn(0, bytes.lastIndex)
                 grayscale[index] = (bytes[sourceIndex].toInt() and 0xFF) / 255f
             }
         } else {
-            // PADDING: Jika file sangat kecil (seperti file opus pendek), isi sisanya dengan nol
             for (index in 0 until pixelCount) {
                 grayscale[index] = if (index < bytes.size) {
                     (bytes[index].toInt() and 0xFF) / 255f
@@ -191,15 +153,10 @@ object BinaryImagePreprocessor {
             }
         }
 
-        // Prepare final CHW float buffer
         val chw = FloatArray(CHANNELS * pixelCount)
+        val mean = floatArrayOf(0.485f, 0.456f, 0.406f)  
+        val std = floatArrayOf(0.229f, 0.224f, 0.225f)   
 
-        // CRITICAL: ImageNet normalization MUST ALWAYS be applied for malware_model_binary.onnx
-        // Model was trained with these specific mean/std values per channel
-        val mean = floatArrayOf(0.485f, 0.456f, 0.406f)  // REQUIRED for model accuracy
-        val std = floatArrayOf(0.229f, 0.224f, 0.225f)   // REQUIRED for model accuracy
-
-        // Determine channel order indices
         val channelOrder = if (useBgr) intArrayOf(2, 1, 0) else intArrayOf(0, 1, 2)
 
         for (channel in 0 until CHANNELS) {
@@ -207,7 +164,6 @@ object BinaryImagePreprocessor {
             val offset = outChannel * pixelCount
             for (i in 0 until pixelCount) {
                 var v = grayscale[i]
-                // ALWAYS apply ImageNet normalization (subtract mean and divide by std)
                 v = (v - mean[channel]) / std[channel]
                 chw[offset + i] = v
             }
@@ -225,15 +181,3 @@ fun isSupportedImageName(fileName: String?): Boolean {
     val normalized = fileName.lowercase(Locale.getDefault())
     return normalized.endsWith(".jpg") || normalized.endsWith(".jpeg") || normalized.endsWith(".png")
 }
-
-fun inferExpectedLabel(pathHint: String?): PredictionLabel? {
-    if (pathHint.isNullOrBlank()) return null
-    val text = pathHint.lowercase(Locale.getDefault())
-    return when {
-        listOf("malware", "virus", "infected", "danger").any { it in text } -> PredictionLabel.MALWARE
-        listOf("safe", "benign", "clean", "normal", "good").any { it in text } -> PredictionLabel.SAFE
-        else -> null
-    }
-}
-
-
