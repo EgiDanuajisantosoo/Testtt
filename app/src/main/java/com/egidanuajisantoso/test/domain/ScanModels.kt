@@ -84,7 +84,12 @@ object BinaryImagePreprocessor {
         height: Int = DEFAULT_HEIGHT,
         fileName: String? = null,
     ): BinaryImageTensor {
-        if (useBitmapDecodeForImages && isSupportedImageName(fileName)) {
+        // Hanya gunakan Bitmap Decode jika ekstensi AKHIRNYA adalah gambar asli
+        val isTrueImage = fileName?.lowercase()?.let { 
+            it.endsWith(".jpg") || it.endsWith(".jpeg") || it.endsWith(".png")
+        } ?: false
+
+        if (useBitmapDecodeForImages && isTrueImage) {
             val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
             val decoded = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) }.getOrNull()
             if (decoded != null) {

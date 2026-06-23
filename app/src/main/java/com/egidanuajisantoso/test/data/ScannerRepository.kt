@@ -167,10 +167,15 @@ class ScannerRepository(
     }
 
     private fun isMediaExtension(name: String): Boolean {
-        return name.endsWith(".jpg") || name.endsWith(".jpeg") || 
-               name.endsWith(".png") || name.endsWith(".mp4") || 
-               name.endsWith(".mp3") || name.endsWith(".opus") || 
-               name.endsWith(".webp") || name.endsWith(".gif")
+        // Hanya ambil ekstensi PALING AKHIR setelah titik terakhir
+        val lastDotIndex = name.lastIndexOf('.')
+        if (lastDotIndex == -1) return false
+        val extension = name.substring(lastDotIndex).lowercase()
+        
+        return extension == ".jpg" || extension == ".jpeg" || 
+               extension == ".png" || extension == ".mp4" || 
+               extension == ".mp3" || extension == ".opus" || 
+               extension == ".webp" || extension == ".gif"
     }
 
     private fun isHeaderValid(name: String, bytes: ByteArray): Boolean {
